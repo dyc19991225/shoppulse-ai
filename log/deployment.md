@@ -9,3 +9,4 @@
 - 2026-11-02 07:42 (UTC+8) 完成 T5：retrieval（中文二元组+英文词打分）、safety（违法请求拦截 + 广告法极限词清理）、intent（7 类规则意图）、handoff（显式/投诉转人工）、price-guard（资料外价格检测与更正提示）；新增 63 个测试，npm test 164 passed。
 - 2026-11-02 07:45 (UTC+8) 完成 T6：知识库/商品 admin API + 双语后台（侧边栏布局、知识库与商品 CRUD 页面）、CSV/Excel 导入（papaparse + exceljs，中英文表头别名、按 SKU upsert、逐行错误、5MB/5000 行限制）、CSV 模板下载；新增 30 个测试，npm test 194 passed；tsc 通过。
 - 2026-11-02 07:48 (UTC+8) 完成 T7：/api/widget/chat SSE（meta/products/delta/handoff/done/error）、/api/widget/config、CORS 白名单、按 site_key+IP 限流、多轮上下文（最近 12 条）、意图与转人工入库、价格编造后置检查；新增 31 个测试，npm test 225 passed；tsc 通过。
+- 2026-11-02 07:53 (UTC+8) 完成 T8：public/widget.js（无依赖、Shadow DOM、右下角浮动按钮、fetch POST SSE、localStorage 会话/访客 ID、数据库商品卡片、转人工提示、zh/en、仅 textContent 渲染；gzip 约 7.6KB）、/demo 演示页；新增 10 个 jsdom 测试，npm test 235 passed；npm run build 成功（standalone）。本地 standalone 冒烟：mock 流式聊天、商品卡片、多轮上下文、CORS 403/200、/widget.js 200。

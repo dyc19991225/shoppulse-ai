@@ -128,6 +128,7 @@ export const zh = {
   'widget.handoff': '已为您转接人工客服，请稍候',
   'widget.error': '网络异常，请稍后重试',
   'widget.poweredBy': '由 ShopPulse AI 提供支持',
+  'widget.demoHint': '点击右下角的浮动按钮即可体验 AI 客服：流式回复、商品卡片与转人工提示。',
 } as const;
 
 export type DictionaryKey = keyof typeof zh;

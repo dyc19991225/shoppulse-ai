@@ -6,6 +6,7 @@ import {
   asOptionalString,
   asString,
   isSafeHttpUrl,
+  isUniqueSkuError,
   jsonError,
   readJsonObject,
 } from '@/lib/api';
@@ -66,11 +67,4 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (isUniqueSkuError(error)) return jsonError(409, 'duplicate_sku');
     throw error;
   }
-}
-
-export function isUniqueSkuError(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    /UNIQUE constraint failed: products\.sku/i.test(error.message)
-  );
 }

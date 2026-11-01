@@ -50,6 +50,13 @@ export function parseId(value: string): number | null {
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
+/** True when SQLite rejected a duplicate product SKU. */
+export function isUniqueSkuError(error: unknown): boolean {
+  return (
+    error instanceof Error && /UNIQUE constraint failed: products\.sku/i.test(error.message)
+  );
+}
+
 /** Only http(s) links are accepted for product images / pages. */
 export function isSafeHttpUrl(value: string): boolean {
   if (!value) return true;

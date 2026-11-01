@@ -131,4 +131,5 @@ export const en: Record<DictionaryKey, string> = {
   'widget.handoff': 'Connecting you to a human agent, please wait',
   'widget.error': 'Network error. Please try again.',
   'widget.poweredBy': 'Powered by ShopPulse AI',
+  'widget.demoHint': 'Click the floating button in the bottom-right corner to try streaming replies, product cards and human handoff.',
 };
