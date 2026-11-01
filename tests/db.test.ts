@@ -1,0 +1,273 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+  openDb,
+  addCopyHistory,
+  addMessage,
+  createConversation,
+  createKbEntry,
+  createProduct,
+  createSite,
+  DEFAULT_ALLOWED_ORIGINS,
+  DEFAULT_SITE_KEY,
+  deleteConversation,
+  deleteKbEntry,
+  deleteProduct,
+  deleteSite,
+  ensureDefaultSite,
+  getConversation,
+  getKbEntry,
+  getProduct,
+  getProductBySku,
+  getSiteByKey,
+  listConversations,
+  listCopyHistory,
+  listKbEntries,
+  listMessages,
+  listProducts,
+  listSites,
+  setConversationHandled,
+  touchConversation,
+  updateKbEntry,
+  updateProduct,
+  updateSite,
+} from '@/lib/db';
+import { seedSampleData } from '@/lib/seed';
+import { createTempDb, type TempDb } from './helpers/tempdb';
+
+let temp: TempDb | undefined;
+
+afterEach(() => {
+  temp?.cleanup();
+  temp = undefined;
+});
+
+function setup(options: Parameters<typeof createTempDb>[0] = {}) {
+  temp = createTempDb(options);
+  return temp;
+}
+
+describe('migrations & default site', () => {
+  it('creates all tables and seeds the default site', () => {
+    const { db } = setup();
+    const tables = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+      .all()
+      .map((row) => (row as { name: string }).name);
+
+    for (const table of ['kb_entries', 'products', 'sites', 'conversations', 'messages', 'copy_history']) {
+      expect(tables).toContain(table);
+    }
+
+    expect(db.pragma('user_version', { simple: true })).toBe(1);
+    const site = getSiteByKey(db, DEFAULT_SITE_KEY);
+    expect(site).not.toBeNull();
+    expect(site!.name).toBe('默认站点');
+    expect(site!.allowedOrigins).toEqual(DEFAULT_ALLOWED_ORIGINS);
+  });
+
+  it('is idempotent when opening the same file twice', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shoppulse-idem-'));
+    const dbPath = path.join(dir, 'same.db');
+    try {
+      const first = openDb({ dbPath });
+      first.close();
+
+      const second = openDb({ dbPath });
+      expect(second.pragma('user_version', { simple: true })).toBe(1);
+      expect(listSites(second)).toHaveLength(1);
+      ensureDefaultSite(second);
+      expect(listSites(second)).toHaveLength(1);
+      second.close();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('can skip default site seeding', () => {
+    const { db } = setup({ seedDefaultSite: false });
+    expect(listSites(db)).toHaveLength(0);
+  });
+});
+
+describe('knowledge base repository', () => {
+  it('creates, reads, updates and deletes entries', () => {
+    const { db } = setup();
+    const created = createKbEntry(db, {
+      type: 'policy',
+      title: '退货政策',
+      content: '7 天无理由退货',
+      keywords: '退货',
+    });
+
+    expect(created.id).toBeGreaterThan(0);
+    expect(created.enabled).toBe(true);
+    expect(created.type).toBe('policy');
+    expect(getKbEntry(db, created.id)).toMatchObject({ title: '退货政策' });
+
+    const updated = updateKbEntry(db, created.id, { title: '退换货政策', enabled: false });
+    expect(updated!.title).toBe('退换货政策');
+    expect(updated!.enabled).toBe(false);
+    expect(updateKbEntry(db, 9999, { title: 'x' })).toBeNull();
+
+    expect(deleteKbEntry(db, created.id)).toBe(true);
+    expect(deleteKbEntry(db, created.id)).toBe(false);
+    expect(getKbEntry(db, created.id)).toBeNull();
+  });
+
+  it('filters by search and enabled state', () => {
+    const { db } = setup();
+    createKbEntry(db, { title: '物流说明', content: '包邮', keywords: '快递' });
+    createKbEntry(db, { title: '支付说明', content: '微信支付宝', enabled: false });
+
+    expect(listKbEntries(db)).toHaveLength(2);
+    expect(listKbEntries(db, { enabledOnly: true })).toHaveLength(1);
+    expect(listKbEntries(db, { search: '快递' }).map((e) => e.title)).toEqual(['物流说明']);
+    expect(listKbEntries(db, { search: '不存在的词' })).toHaveLength(0);
+    expect(listKbEntries(db, { limit: 1 })).toHaveLength(1);
+  });
+});
+
+describe('products repository', () => {
+  it('creates, reads, updates, deletes and enforces unique SKU', () => {
+    const { db } = setup();
+    const product = createProduct(db, {
+      sku: 'SKU-1',
+      name: '洗碗巾',
+      price: 29.9,
+      stock: 5,
+      sellingPoints: '吸水',
+    });
+
+    expect(getProduct(db, product.id)!.name).toBe('洗碗巾');
+    expect(getProductBySku(db, 'SKU-1')!.id).toBe(product.id);
+
+    const updated = updateProduct(db, product.id, { price: 19.9, enabled: false });
+    expect(updated!.price).toBe(19.9);
+    expect(updated!.enabled).toBe(false);
+    expect(updateProduct(db, 9999, { name: 'x' })).toBeNull();
+
+    expect(() => createProduct(db, { sku: 'SKU-1', name: '重复' })).toThrow();
+    expect(deleteProduct(db, product.id)).toBe(true);
+    expect(deleteProduct(db, product.id)).toBe(false);
+  });
+
+  it('allows multiple products without SKU', () => {
+    const { db } = setup();
+    createProduct(db, { name: 'A' });
+    createProduct(db, { name: 'B' });
+    expect(listProducts(db)).toHaveLength(2);
+  });
+
+  it('searches and filters products', () => {
+    const { db } = setup();
+    createProduct(db, { name: '山茶花洗发水', category: '洗护', sku: 'A1' });
+    createProduct(db, { name: '收纳箱', category: '收纳', sku: 'B1', enabled: false });
+
+    expect(listProducts(db, { search: '洗发' })).toHaveLength(1);
+    expect(listProducts(db, { category: '收纳' })).toHaveLength(1);
+    expect(listProducts(db, { enabledOnly: true })).toHaveLength(1);
+    expect(listProducts(db, { limit: 1 })).toHaveLength(1);
+  });
+});
+
+describe('sites repository', () => {
+  it('creates, updates and deletes sites', () => {
+    const { db } = setup();
+    const site = createSite(db, {
+      name: '测试站',
+      siteKey: 'test-key',
+      allowedOrigins: ['https://shop.example.com'],
+      rateLimitPerMin: 60,
+    });
+
+    expect(getSiteByKey(db, 'test-key')!.name).toBe('测试站');
+    const updated = updateSite(db, site.id, { allowedOrigins: ['https://a.com'], rateLimitPerMin: 10 });
+    expect(updated!.allowedOrigins).toEqual(['https://a.com']);
+    expect(updated!.rateLimitPerMin).toBe(10);
+    expect(updateSite(db, 9999, { name: 'x' })).toBeNull();
+
+    expect(deleteSite(db, site.id)).toBe(true);
+  });
+
+  it('refuses to delete a site that owns conversations', () => {
+    const { db } = setup();
+    const site = getSiteByKey(db, DEFAULT_SITE_KEY)!;
+    createConversation(db, { id: 'c1', siteId: site.id });
+    expect(() => deleteSite(db, site.id)).toThrow();
+  });
+});
+
+describe('conversations & messages', () => {
+  it('stores messages and computes summaries', () => {
+    const { db } = setup();
+    const site = getSiteByKey(db, DEFAULT_SITE_KEY)!;
+    createConversation(db, { id: 'conv-1', siteId: site.id, visitorId: 'v1', topIntent: 'price' });
+    addMessage(db, { id: 'm1', conversationId: 'conv-1', role: 'user', content: '多少钱', intent: 'price' });
+    addMessage(db, { id: 'm2', conversationId: 'conv-1', role: 'assistant', content: '29.9 元' });
+
+    const messages = listMessages(db, 'conv-1');
+    expect(messages.map((m) => m.id)).toEqual(['m1', 'm2']);
+
+    touchConversation(db, 'conv-1', { needsHuman: true, topIntent: 'after_sale' });
+    const conversation = getConversation(db, 'conv-1')!;
+    expect(conversation.needsHuman).toBe(true);
+    expect(conversation.topIntent).toBe('after_sale');
+
+    const { items, total } = listConversations(db);
+    expect(total).toBe(1);
+    expect(items[0]).toMatchObject({ id: 'conv-1', siteName: '默认站点', messageCount: 2 });
+
+    expect(listConversations(db, { needsHuman: true }).total).toBe(1);
+    expect(listConversations(db, { handled: true }).total).toBe(0);
+
+    expect(setConversationHandled(db, 'conv-1', true)).toBe(true);
+    expect(getConversation(db, 'conv-1')!.handled).toBe(true);
+    expect(setConversationHandled(db, 'missing', true)).toBe(false);
+  });
+
+  it('cascades message deletion with the conversation', () => {
+    const { db } = setup();
+    const site = getSiteByKey(db, DEFAULT_SITE_KEY)!;
+    createConversation(db, { id: 'conv-2', siteId: site.id });
+    addMessage(db, { id: 'm3', conversationId: 'conv-2', role: 'user', content: 'hi' });
+
+    expect(deleteConversation(db, 'conv-2')).toBe(true);
+    expect(listMessages(db, 'conv-2')).toHaveLength(0);
+  });
+});
+
+describe('copy history', () => {
+  it('round-trips params and outputs', () => {
+    const { db } = setup();
+    const product = createProduct(db, { name: '商品', price: 10 });
+    addCopyHistory(db, {
+      id: 'ch1',
+      productId: product.id,
+      params: { platform: 'xhs', tone: 'lively' },
+      outputs: { xhs: '文案 ✨' },
+    });
+
+    const [entry] = listCopyHistory(db);
+    expect(entry.params).toEqual({ platform: 'xhs', tone: 'lively' });
+    expect(entry.outputs).toEqual({ xhs: '文案 ✨' });
+    expect(listCopyHistory(db, { productId: product.id })).toHaveLength(1);
+    expect(listCopyHistory(db, { productId: 9999 })).toHaveLength(0);
+  });
+});
+
+describe('seedSampleData', () => {
+  it('inserts sample data once and is idempotent', () => {
+    const { db } = setup();
+
+    const first = seedSampleData(db);
+    expect(first.kbInserted).toBeGreaterThan(0);
+    expect(first.productsInserted).toBeGreaterThan(0);
+    expect(listProducts(db).some((p) => p.sku === 'QH-001')).toBe(true);
+
+    const second = seedSampleData(db);
+    expect(second).toEqual({ kbInserted: 0, productsInserted: 0 });
+  });
+});
