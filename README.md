@@ -24,11 +24,23 @@ npm run seed                 # 可选：写入示例知识库与商品
 npm run dev                  # http://localhost:3000
 ```
 
-生成管理员密码哈希：
+生成管理员密码哈希并写入 `.env.local`：
 
 ```bash
-npm run hash-password -- 'your-password'
+npm run hash-password -- 'your-password'   # 输出 salt:hash
+# .env.local
+# ADMIN_USERNAME=admin
+# ADMIN_PASSWORD_HASH=<上一步输出>
+# SESSION_SECRET=<随机 32 字节 hex>
 ```
+
+生成 `SESSION_SECRET`：
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+访问 `http://localhost:3000/admin` 会自动跳转到 `/login`。未登录访问 `/api/admin/*` 返回 401。
 
 ## 脚本
 
