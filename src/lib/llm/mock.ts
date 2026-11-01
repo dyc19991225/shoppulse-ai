@@ -73,13 +73,18 @@ export function buildMockAnswer(messages: ChatRequest['messages']): string {
     .join('\n');
 }
 
-/** Pulls plain-text lines out of a prompt's 【资料】 section. */
+/**
+ * Pulls plain-text lines out of a prompt's 【资料】 section. Uses the last
+ * marker, because instruction text may also mention "【资料】" inline.
+ */
 function extractResources(system: string): string[] {
-  const marker = system.indexOf('【资料】');
+  const marker = system.lastIndexOf('【资料】');
   if (marker === -1) return [];
   const section = system.slice(marker + '【资料】'.length);
-  const end = section.indexOf('【');
-  const body = end === -1 ? section : section.slice(0, end);
+  const end = section.indexOf('【资料结束】');
+  const endFallback = section.indexOf('\n【');
+  const cutoff = end !== -1 ? end : endFallback;
+  const body = cutoff === -1 ? section : section.slice(0, cutoff);
   return body
     .split('\n')
     .map((line) => line.replace(/^[-*\d.\s]+/, '').trim())
