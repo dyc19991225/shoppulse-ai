@@ -180,6 +180,11 @@
   var CSS = [
     ':host{all:initial}',
     '*{box-sizing:border-box}',
+    // The UA `[hidden]{display:none}` rule is overridden by the author
+    // `.launcher{display:flex}` / `.panel{display:flex}` rules below (author
+    // styles beat UA styles at equal specificity), which made `hidden` inert.
+    // Pin it back so panel/launcher/badge visibility is actually honored.
+    '[hidden]{display:none!important}',
     '.root{position:fixed;right:24px;bottom:24px;z-index:2147483000;',
     'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;',
     'font-size:14px;line-height:1.5;color:#0f172a}',

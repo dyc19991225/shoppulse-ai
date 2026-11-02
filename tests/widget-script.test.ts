@@ -190,6 +190,33 @@ describe('widget.js', () => {
     expect((shadow.querySelector('.panel') as HTMLElement).hidden).toBe(false);
   });
 
+  it('closes via the header X and reopens (hidden attr is backed by the stylesheet)', () => {
+    // The regression: `.launcher{display:flex}`/`.panel{display:flex}` beat the
+    // UA `[hidden]{display:none}` rule, so the `hidden` attribute had no visual
+    // effect. Pin it down both at the CSS level and functionally.
+    expect(WIDGET_SOURCE).toMatch(/\[hidden\]\s*\{[^}]*display\s*:\s*none\s*!important/);
+
+    const { shadow, window } = setup();
+    const panel = shadow.querySelector('.panel') as HTMLElement;
+    const launcher = shadow.querySelector('.launcher') as HTMLElement;
+    const closeBtn = shadow.querySelector('.icon-btn') as HTMLButtonElement;
+
+    // Open.
+    window.ShopPulseWidget.open();
+    expect(panel.hidden).toBe(false);
+    expect(launcher.hidden).toBe(true);
+
+    // Close via the header X.
+    closeBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    expect(panel.hidden).toBe(true);
+    expect(launcher.hidden).toBe(false);
+
+    // Open again.
+    window.ShopPulseWidget.open();
+    expect(panel.hidden).toBe(false);
+    expect(launcher.hidden).toBe(true);
+  });
+
   it('streams deltas into the transcript and saves the conversation id', async () => {
     const harness = setup();
     const { shadow, window } = harness;
