@@ -10,3 +10,5 @@
 - 2026-11-02 07:45 (UTC+8) 完成 T6：知识库/商品 admin API + 双语后台（侧边栏布局、知识库与商品 CRUD 页面）、CSV/Excel 导入（papaparse + exceljs，中英文表头别名、按 SKU upsert、逐行错误、5MB/5000 行限制）、CSV 模板下载；新增 30 个测试，npm test 194 passed；tsc 通过。
 - 2026-11-02 07:48 (UTC+8) 完成 T7：/api/widget/chat SSE（meta/products/delta/handoff/done/error）、/api/widget/config、CORS 白名单、按 site_key+IP 限流、多轮上下文（最近 12 条）、意图与转人工入库、价格编造后置检查；新增 31 个测试，npm test 225 passed；tsc 通过。
 - 2026-11-02 07:53 (UTC+8) 完成 T8：public/widget.js（无依赖、Shadow DOM、右下角浮动按钮、fetch POST SSE、localStorage 会话/访客 ID、数据库商品卡片、转人工提示、zh/en、仅 textContent 渲染；gzip 约 7.6KB）、/demo 演示页；新增 10 个 jsdom 测试，npm test 235 passed；npm run build 成功（standalone）。本地 standalone 冒烟：mock 流式聊天、商品卡片、多轮上下文、CORS 403/200、/widget.js 200。
+- 2026-11-02 08:10 (UTC+8) 批次2（Claude Code）：T5 检索/安全/意图/转人工/价格防编造、T6 知识库+商品 CRUD+CSV/Excel 导入、T7 挂件聊天 SSE+CORS+限流+多轮、T8 widget.js（Shadow DOM）+/demo，各自提交（至 9bd6df5）；npm test 235 passed；build 成功。会话曾被中断，已恢复。
+- 2026-11-02 08:36 (UTC+8) 完成 T9：/api/admin/copywrite（4 平台并行生成、platform prompt、JSON 解析容错、广告法清理 warnings、违规拦截、无 key 时 Mock 文案、copy_history）+ /admin/copywriting 页面（商品/人群/卖点/语气/平台多选、卡片一键复制、生成历史）；新增 20 个测试，npm test 255 passed；tsc 通过。
