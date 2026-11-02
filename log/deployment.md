@@ -39,3 +39,4 @@
 - 2026-11-02 11:08 (UTC+8) 用户请求为朋友开 3 个试用账号（trial1–3）。代码调查：仅支持单一管理员（ADMIN_USERNAME + ADMIN_PASSWORD_HASH 来自 env，verifyAdminCredentials 只比对这一组），无 users 表、无注册/邀请/CLI/管理 API；数据全局共享，kb_entries/products/copy_history 无 owner/tenant 列（sites 只区分挂件 site_key，不是账号隔离）。按指示停止：未创建账号、未改代码、未部署、未动 zz。
 - 2026-11-02 11:10 (UTC+8) v0.2 多用户获批（11:07）：仅本地实现，不部署、不推送。写 specs/multi-user.md（users 表、迁移 v2 owner_id 归 admin、会话 uid/ver、隔离规则、CLI deploy/user.mjs、测试、待批准的部署步骤）与 specs/tasks.md M1–M4。
 - 2026-11-02 11:56 (UTC+8) M1 完成（Claude Code）：users 表 + 迁移 v2（owner_id 默认 1、products 重建为 UNIQUE(owner_id, sku)、外键检查）、ensureEnvAdmin、按用户表登录（禁用/env 兜底/未知用户 dummy 校验）、会话 uid/ver 校验；所有 /api/admin/* 路由现在调用 requireAdminApi。测试 395/395，tsc 通过。
+- 2026-11-02 12:02 (UTC+8) 用户新增需求（11:55/11:58）：参考 SaleSmartly 公开站点与帮助中心（不登录）改版前台/后台并增加后台功能。调研模块：对话工作台、快捷回复、会话/访客标签、加入FAQ、自动化欢迎语、报表；排除多渠道/CRM/群发/团队。选定 F1 报表、F2 快捷回复、F3 人工回复+标签备注、F4 加入知识库、F5 欢迎语，写入 specs/merchant-features.md 与 tasks。顺序：先完成多用户（M2–M4），再做 v0.3。

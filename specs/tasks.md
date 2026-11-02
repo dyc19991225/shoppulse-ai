@@ -21,3 +21,13 @@
 - [ ] M2 所有后台仓储/API/页面/统计/文案按 owner 隔离；挂件按 site.owner_id 检索；隔离测试（猜 ID 返回 404）。
 - [ ] M3 CLI `deploy/user.mjs`（add/list/disable/enable/reset-password，密码只写入 --out 文件 600）+ 测试 + DEPLOY.md 升级步骤（不执行）。
 - [ ] M4 Codex 审查一次 + 修复；本地两用户端到端核验。
+
+## v0.3 商家工作台功能 + 改版（见 specs/merchant-features.md）
+
+- [ ] F1 报表汇总页 /admin/reports + API（按用户、真实聚合、按日补零、空状态）+ 测试。
+- [ ] F2 快捷回复（话术库）CRUD + 会话详情中插入 + 测试。
+- [ ] F3 会话工作台：人工回复（agent 消息，挂件轮询接收）、会话标签与备注、按标签筛选 + 测试。
+- [ ] F4 会话消息一键加入知识库。
+- [ ] F5 站点欢迎语（挂件展示）。
+- [ ] R1 Codex 改版落地页与后台（参考 SaleSmartly 布局风格，不用其文案/素材）+ 截图 screenshots/。
+- [ ] R2 Codex 审查一次 + Claude Code 修复。
