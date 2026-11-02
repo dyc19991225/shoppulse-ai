@@ -177,6 +177,30 @@ describe('schema v1 -> v2 migration', () => {
     db.close();
   });
 
+  it('keeps copy_history pointing at the rebuilt products table', () => {
+    const db = openDb({ dbPath: createPopulatedV1(), seedDefaultSite: false });
+
+    // The rebuild creates products_v2, drops products and renames the new
+    // table. The FK must follow the rename to 'products', not keep a stale
+    // reference to a table that no longer exists.
+    const productFk = (
+      db.pragma('foreign_key_list(copy_history)') as {
+        table: string;
+        from: string;
+        to: string;
+        on_delete: string;
+      }[]
+    ).find((fk) => fk.from === 'product_id');
+    expect(productFk).toMatchObject({
+      table: 'products',
+      to: 'id',
+      on_delete: 'SET NULL',
+    });
+    expect(db.pragma('foreign_key_check')).toEqual([]);
+
+    db.close();
+  });
+
   it('keeps copy_history ON DELETE SET NULL working after the products rebuild', () => {
     const db = openDb({ dbPath: createPopulatedV1(), seedDefaultSite: false });
 

@@ -100,6 +100,26 @@ describe('migrations & default site', () => {
     const { db } = setup({ seedDefaultSite: false });
     expect(listSites(db, OWNER)).toHaveLength(0);
   });
+
+  it("does not treat another user's site as the bootstrap admin's default", () => {
+    const { db } = setup({ seedDefaultSite: false });
+    db.prepare(
+      `INSERT INTO users (id, username, password_hash, role, disabled, session_version, created_at)
+       VALUES (2, 'friend', '', 'user', 0, 0, ?)`,
+    ).run(new Date().toISOString());
+    const friendSite = createSite(db, 2, {
+      name: '朋友的站点',
+      siteKey: 'friend-site-key',
+      allowedOrigins: [],
+      rateLimitPerMin: 30,
+    });
+
+    const id = ensureDefaultSite(db);
+
+    expect(id).not.toBe(friendSite.id);
+    expect(listSites(db, OWNER).map((site) => site.siteKey)).toEqual([DEFAULT_SITE_KEY]);
+    expect(listSites(db, 2).map((site) => site.siteKey)).toEqual(['friend-site-key']);
+  });
 });
 
 describe('knowledge base repository', () => {

@@ -40,8 +40,9 @@ function verifyEnvPassword(password: string, config: Pick<AppConfig, 'admin'>): 
 /**
  * Authenticates a login attempt against the users table.
  *
- * - Unknown user: still runs one scrypt verify so response timing does not
- *   reveal which usernames exist.
+ * - Unknown users, disabled users, malformed/absent stored hashes and a
+ *   bootstrap admin without credentials all run one scrypt verify, so
+ *   response timing does not reveal which usernames exist or their state.
  * - Disabled users and wrong passwords return the same generic failure.
  * - The bootstrap admin row falls back to the env hash/password while its own
  *   password_hash is empty (so rotating ADMIN_PASSWORD_HASH keeps working).
@@ -55,17 +56,16 @@ export function verifyUserCredentials(
   const user = getUserByUsername(db, username);
   const storedHash = user?.passwordHash ?? '';
 
-  // Every path spends one scrypt verification (except the dev-only plaintext
-  // env fallback), so unknown users cannot be told apart by response time.
+  // Exactly one scrypt verification on every path: stored hash when present,
+  // env fallback for user 1, and a dummy verify whenever no real hash was
+  // checked. The dev-only plaintext ADMIN_PASSWORD still pays the dummy cost
+  // so it cannot be told apart by response timing either.
   let passwordOk = false;
   if (storedHash) {
     passwordOk = verifyPassword(password, storedHash);
-  } else if (
-    user &&
-    user.id === 1 &&
-    (config.admin.passwordHash || config.admin.password)
-  ) {
+  } else if (user?.id === 1 && (config.admin.passwordHash || config.admin.password)) {
     passwordOk = verifyEnvPassword(password, config);
+    if (!config.admin.passwordHash) verifyPassword(password, getDummyHash());
   } else {
     verifyPassword(password, getDummyHash());
   }

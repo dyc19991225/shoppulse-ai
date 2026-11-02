@@ -4,6 +4,7 @@ import { GET as listRoute } from '@/app/api/admin/conversations/route';
 import { GET as detailRoute, PUT as updateRoute } from '@/app/api/admin/conversations/[id]/route';
 import {
   addMessage,
+  countMessages,
   createConversation,
   createSite,
   getSiteByKey,
@@ -154,6 +155,17 @@ describe('conversation detail API', () => {
     expect(body.item).toMatchObject({ id: 'c1', siteName: '默认站点', messageCount: 2 });
     expect(body.messages.map((message: { id: string }) => message.id)).toEqual(['m1', 'm2']);
     expect(body.messages[1].content).toContain('29.90');
+  });
+
+  it('counts only the messages of a conversation owned by the session user', async () => {
+    seedConversations();
+    const detail = await (await detailRoute(getRequest('/'), params('c1'))).json();
+    expect(detail.item.messageCount).toBe(2);
+
+    // The count must be owner-scoped too, so another owner sees zero even for
+    // a conversation id that exists.
+    expect(countMessages(db(), 2, 'c1')).toBe(0);
+    expect(countMessages(db(), OWNER, 'c1')).toBe(2);
   });
 
   it('404s for unknown conversations', async () => {

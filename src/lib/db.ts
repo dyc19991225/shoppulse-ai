@@ -210,8 +210,8 @@ export const BOOTSTRAP_ADMIN_ID = 1;
 /** Creates the bootstrap admin's default widget site on first boot if none exist. */
 export function ensureDefaultSite(db: DB): number {
   const existing = db
-    .prepare('SELECT id FROM sites ORDER BY id LIMIT 1')
-    .get() as { id: number } | undefined;
+    .prepare('SELECT id FROM sites WHERE owner_id = ? ORDER BY id LIMIT 1')
+    .get(BOOTSTRAP_ADMIN_ID) as { id: number } | undefined;
   if (existing) return existing.id;
 
   const info = db
@@ -947,6 +947,20 @@ export function addMessage(
     intent: input.intent ?? '',
     createdAt,
   };
+}
+
+/** Counts messages only while the conversation's site still belongs to the owner. */
+export function countMessages(db: DB, ownerId: number, conversationId: string): number {
+  return (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM messages m
+         JOIN conversations c ON c.id = m.conversation_id
+         JOIN sites s ON s.id = c.site_id
+         WHERE m.conversation_id = ? AND s.owner_id = ?`,
+      )
+      .get(conversationId, ownerId) as { count: number }
+  ).count;
 }
 
 export function listMessages(db: DB, ownerId: number, conversationId: string): Message[] {

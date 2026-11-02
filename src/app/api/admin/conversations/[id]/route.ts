@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import {
+  countMessages,
   getConversation,
   listMessages,
   setConversationHandled,
@@ -27,16 +28,10 @@ export async function GET(request: NextRequest, { params }: Params): Promise<Nex
   const siteRow = db
     .prepare('SELECT name FROM sites WHERE id = ? AND owner_id = ?')
     .get(conversation.siteId, auth.user.id) as { name: string } | undefined;
-  const messageCount = (
-    db
-      .prepare('SELECT COUNT(*) AS count FROM messages WHERE conversation_id = ?')
-      .get(conversation.id) as { count: number }
-  ).count;
-
   const summary: ConversationSummary = {
     ...conversation,
     siteName: siteRow?.name ?? '',
-    messageCount,
+    messageCount: countMessages(db, auth.user.id, conversation.id),
   };
 
   return NextResponse.json({

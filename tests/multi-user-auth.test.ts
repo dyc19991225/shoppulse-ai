@@ -18,6 +18,7 @@ import {
   getUserByUsername,
   type DB,
 } from '@/lib/db';
+import * as passwordModule from '@/lib/auth/password';
 import { hashPasswordSync } from '@/lib/auth/password';
 import { getDb, resetDbCache } from '@/lib/db-runtime';
 import { resetLoginLimiter } from '@/lib/ratelimit';
@@ -202,6 +203,78 @@ describe('verifyUserCredentials', () => {
     it('applies only to user 1, not to CLI-created users', () => {
       createUser('friend');
       expect(verifyUserCredentials(db(), 'friend', ENV_PASSWORD, config()).ok).toBe(false);
+    });
+  });
+
+  describe('timing-stable failures', () => {
+    function spyOnVerify() {
+      return vi.spyOn(passwordModule, 'verifyPassword');
+    }
+
+    let verifySpy: ReturnType<typeof spyOnVerify>;
+
+    /** Hashes the code actually compared against, in call order. */
+    function verifyCalls(): string[] {
+      return verifySpy.mock.calls.map(([, stored]) => String(stored));
+    }
+
+    /** True when the call targeted the lazily built dummy hash (not a user's). */
+    function verifiesDummy(): boolean {
+      return verifyCalls().some((stored) => stored !== USER_HASH && stored !== ENV_HASH);
+    }
+
+    beforeEach(() => {
+      verifySpy = spyOnVerify();
+    });
+
+    afterEach(() => {
+      verifySpy.mockRestore();
+    });
+
+    it('runs a dummy verify for unknown users', () => {
+      expect(verifyUserCredentials(db(), 'ghost', USER_PASSWORD, config()).ok).toBe(false);
+      expect(verifySpy).toHaveBeenCalledTimes(1);
+      expect(verifiesDummy()).toBe(true);
+    });
+
+    it('verifies a real hash for disabled users, so they are not quicker to reject', () => {
+      createUser('gone', { passwordHash: USER_HASH, disabled: true });
+      expect(verifyUserCredentials(db(), 'gone', USER_PASSWORD, config()).ok).toBe(false);
+      expect(verifySpy).toHaveBeenCalledTimes(1);
+      expect(verifyCalls()).toEqual([USER_HASH]);
+    });
+
+    it('runs a dummy verify for a disabled user with no stored hash', () => {
+      createUser('gone', { disabled: true });
+      expect(verifyUserCredentials(db(), 'gone', USER_PASSWORD, config()).ok).toBe(false);
+      expect(verifySpy).toHaveBeenCalledTimes(1);
+      expect(verifiesDummy()).toBe(true);
+    });
+
+    it('runs a dummy verify when the bootstrap admin has no credential at all', () => {
+      const noEnv = config({ passwordHash: '', password: '' });
+      expect(verifyUserCredentials(db(), 'admin', USER_PASSWORD, noEnv).ok).toBe(false);
+      expect(verifySpy).toHaveBeenCalledTimes(1);
+      expect(verifiesDummy()).toBe(true);
+    });
+
+    it('still spends one scrypt on the plaintext dev fallback', () => {
+      const devConfig = config({ passwordHash: '', password: 'dev-pass' });
+
+      expect(verifyUserCredentials(db(), 'admin', 'dev-pass', devConfig).ok).toBe(true);
+      expect(verifySpy).toHaveBeenCalledTimes(1);
+      expect(verifiesDummy()).toBe(true);
+
+      verifySpy.mockClear();
+      expect(verifyUserCredentials(db(), 'admin', 'nope', devConfig).ok).toBe(false);
+      expect(verifySpy).toHaveBeenCalledTimes(1);
+      expect(verifiesDummy()).toBe(true);
+    });
+
+    it('verifies the env hash instead of a dummy when ADMIN_PASSWORD_HASH is set', () => {
+      expect(verifyUserCredentials(db(), 'admin', ENV_PASSWORD, config()).ok).toBe(true);
+      expect(verifySpy).toHaveBeenCalledTimes(1);
+      expect(verifyCalls()).toEqual([ENV_HASH]);
     });
   });
 
