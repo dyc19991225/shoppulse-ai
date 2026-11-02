@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic';
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   let username = '';
   try {
-    const secret = loadConfig().sessionSecret;
+    const secret = loadConfig(undefined, { checkLlmReady: false }).sessionSecret;
     const session = secret
       ? await verifySession(cookies().get(SESSION_COOKIE)?.value, secret)
       : { valid: false as const, reason: 'malformed' as const };

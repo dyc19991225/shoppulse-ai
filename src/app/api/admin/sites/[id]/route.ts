@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { deleteSite, getSiteById, updateSite, type SiteInput } from '@/lib/db';
 import { getDb } from '@/lib/db-runtime';
 import { asString, jsonError, parseId, readJsonObject } from '@/lib/api';
+import { forgetWidgetRateLimit } from '@/lib/widget-ratelimit';
 import {
   embedSnippet,
   isAllowedRateLimit,
@@ -72,9 +73,12 @@ export function DELETE(_request: NextRequest, { params }: Params): NextResponse 
   const id = parseId(params.id);
   if (!id) return jsonError(400, 'invalid_id');
   const db = getDb();
-  if (!getSiteById(db, id)) return jsonError(404, 'not_found');
+  const site = getSiteById(db, id);
+  if (!site) return jsonError(404, 'not_found');
   try {
-    return deleteSite(db, id) ? NextResponse.json({ ok: true }) : jsonError(404, 'not_found');
+    if (!deleteSite(db, id)) return jsonError(404, 'not_found');
+    forgetWidgetRateLimit(site.siteKey);
+    return NextResponse.json({ ok: true });
   } catch {
     return jsonError(409, 'site_has_conversations');
   }

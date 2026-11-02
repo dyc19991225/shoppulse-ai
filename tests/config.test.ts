@@ -77,6 +77,19 @@ describe('loadConfig', () => {
 
   it('rejects requiring the LLM without a key', () => {
     expect(() => loadConfig({ SHOPPULSE_REQUIRE_LLM: '1' })).toThrow(/SHOPPULSE_LLM_API_KEY/);
+    // yes/on are accepted just like 1/true.
+    expect(() => loadConfig({ SHOPPULSE_REQUIRE_LLM: 'yes' })).toThrow(/SHOPPULSE_LLM_API_KEY/);
+    expect(() => loadConfig({ SHOPPULSE_REQUIRE_LLM: 'on' })).toThrow(/SHOPPULSE_LLM_API_KEY/);
+  });
+
+  it('can skip LLM readiness so core config/DB loading still succeeds', () => {
+    const config = loadConfig(
+      { SHOPPULSE_REQUIRE_LLM: '1', SHOPPULSE_DB_PATH: '/tmp/core.db' },
+      { checkLlmReady: false },
+    );
+    expect(config.llm.requireLlm).toBe(true);
+    expect(config.llm.apiKey).toBe('');
+    expect(config.dbPath).toBe('/tmp/core.db');
   });
 
   it('requires session secret and password hash in production', () => {

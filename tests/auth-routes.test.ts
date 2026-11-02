@@ -24,6 +24,9 @@ beforeEach(() => {
   vi.stubEnv('ADMIN_PASSWORD', '');
   vi.stubEnv('SESSION_SECRET', SECRET);
   vi.stubEnv('NODE_ENV', 'test');
+  // Tests simulate distinct clients via X-Forwarded-For, which is honoured
+  // only when a trusted proxy is configured.
+  vi.stubEnv('SHOPPULSE_TRUST_PROXY', '1');
 });
 
 afterEach(() => {

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildMockCopy,
   buildPlatformPrompt,
+  type CopyTone,
   COPY_PLATFORMS,
   ensureEmoji,
   finalizePlatformCopy,
@@ -577,8 +578,62 @@ describe('generateCopywriting', () => {
       platforms: ['moments'],
       lang: 'en',
     });
-    expect(result.outputs[0].text).toContain('A little find');
+    expect(result.outputs[0].text).toContain('Product notes');
     expect(result.outputs[0].text).toContain('Machine washable');
+  });
+
+  it('mock copy contains no unsupported testimonials or quality claims', () => {
+    const product = getProduct(db(), sampleProduct().id)!;
+    const unsupported = [
+      '安利',
+      '品质可靠',
+      '使用体验',
+      '我真的',
+      '值得关注',
+      '值得慢慢了解',
+      '按头',
+      '亲测',
+      '顾客反馈',
+    ];
+    for (const platform of COPY_PLATFORMS) {
+      for (const tone of ['lively', 'professional', 'warm', 'premium', 'humorous'] as const) {
+        const copy = buildMockCopy({
+          platform,
+          product,
+          audience: '',
+          sellingPoints: [],
+          tone,
+          lang: 'zh',
+        });
+        // With no supplied selling points, fall back to the stored description.
+        expect(copy, `${platform}/${tone}`).toContain('天然竹纤维材质');
+        for (const phrase of unsupported) {
+          expect(copy, `${platform}/${tone}: ${phrase}`).not.toContain(phrase);
+        }
+      }
+    }
+  });
+
+  it('mock copy only uses supplied facts when the product row is bare', () => {
+    const product = createProduct(db(), {
+      name: '素色收纳袋',
+      price: 9.9,
+      stock: 1,
+      description: '',
+      sellingPoints: '',
+    });
+    const copy = buildMockCopy({
+      platform: 'detail',
+      product,
+      audience: '',
+      sellingPoints: [],
+      tone: 'professional',
+      lang: 'zh',
+    });
+    expect(copy).toContain('素色收纳袋');
+    expect(copy).toContain('¥9.90');
+    expect(copy).not.toContain('品质可靠');
+    expect(copy).not.toContain('✅');
   });
 
   it('mock copy is grounded in the product row and never invents prices', () => {

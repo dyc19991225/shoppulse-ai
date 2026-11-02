@@ -215,7 +215,7 @@ describe('widget.js', () => {
     );
     await sendPromise;
 
-    expect(shadow.querySelector('.msg.notice')!.textContent).toContain('转接人工客服');
+    expect(shadow.querySelector('.msg.notice')!.textContent).toContain('转人工请求');
   });
 
   it('uses English strings when data-locale="en"', () => {

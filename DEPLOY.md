@@ -84,6 +84,11 @@ SHOPPULSE_LLM_BASE_URL=http://192.74.249.13:8788/v1
 SHOPPULSE_LLM_MODEL=deepseek-v4.1-flash
 SHOPPULSE_LLM_API_KEY=<网关密钥>
 SHOPPULSE_REQUIRE_LLM=1
+# 仅当 Node 只经 Caddy 反向代理暴露时设为 1：限流取 X-Forwarded-For 最右侧
+# （由 Caddy 追加）的一跳；若 8802 可被公网直连，必须保持 0，否则客户端可伪造。
+SHOPPULSE_TRUST_PROXY=1
+# 后台「站点管理」嵌入代码使用的外部访问地址（不要依赖请求头）。
+SHOPPULSE_PUBLIC_BASE_URL=https://shop-ai.dycxy.shop
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD_HASH=<scrypt salt:hash>
 SESSION_SECRET=<install.sh 已生成>
@@ -188,6 +193,18 @@ curl -N -sS https://shop-ai.dycxy.shop/api/widget/chat \
 ```
 
 后台登录：`https://shop-ai.dycxy.shop/admin`。首次登录后到「站点管理」确认允许域名包含商家站点，再复制嵌入代码。
+
+### 反向代理与客户端 IP
+
+生产环境 Node 只监听 `127.0.0.1:8802`，所有请求都经 Caddy 转发：
+
+- `SHOPPULSE_TRUST_PROXY=1`：登录限流与挂件限流使用 `X-Forwarded-For` 的**最右侧**一跳（Caddy 追加的真实连接地址），客户端自带的左侧值被忽略，无法通过轮换 XFF 绕过限流。
+- 未设置该变量（默认 0）时完全忽略 `X-Forwarded-For` / `X-Real-IP`，仅使用服务端看到的连接地址（测试或直连场景为 `unknown`，共用同一限流桶）。
+- 切勿在 8802 可被公网直连时开启该变量。
+
+### 嵌入代码的外部地址
+
+`SHOPPULSE_PUBLIC_BASE_URL` 指定嵌入代码使用的规范 origin（如 `https://shop-ai.dycxy.shop`），优先于任何请求头，杜绝伪造 Host 生成恶意脚本地址。生产 env 模板已预填；未配置时才回退到受信任代理头 / 服务端请求 URL。
 
 ### 资源占用
 

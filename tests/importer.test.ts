@@ -181,6 +181,22 @@ describe('importProducts', () => {
     expect(getProductBySku(db, 'QH-302')).toBeNull();
   });
 
+  it('uses per-row savepoints so a database error cannot roll back counted rows', () => {
+    const db = setup();
+    db.exec(
+      `CREATE TRIGGER fail_boom BEFORE INSERT ON products
+       WHEN NEW.name = 'BOOM' BEGIN SELECT RAISE(ABORT, 'forced'); END;`,
+    );
+    const result = importProducts(db, parseCsv('name,sku\nA,S1\nBOOM,S2\nC,S3\n'));
+
+    expect(result).toMatchObject({ created: 2, failed: 1, total: 3 });
+    expect(result.errors).toEqual([{ row: 3, message: 'forced' }]);
+    // Both successfully counted rows really exist after the transaction.
+    expect(getProductBySku(db, 'S1')?.name).toBe('A');
+    expect(getProductBySku(db, 'S3')?.name).toBe('C');
+    expect(getProductBySku(db, 'S2')).toBeNull();
+  });
+
   it('requires a name column', () => {
     const db = setup();
     expect(() => importProducts(db, parseCsv('sku,price\nQH-1,10\n'))).toThrow(

@@ -630,20 +630,22 @@ export async function generateCopywriting(
 // Deterministic mock copy
 // ---------------------------------------------------------------------------
 
+// Neutral, fact-only openers. Mock copy must not invent personal experience,
+// quality claims or recommendations that the product row does not support.
 const TONE_OPENERS: Record<CopyTone, { zh: string; en: string }> = {
-  lively: { zh: '这件好物我真的想按头安利！', en: 'I genuinely want to shout about this one!' },
+  lively: { zh: '这件商品的信息已经整理好啦！', en: 'Here is what we know about this one!' },
   professional: {
-    zh: '从材质与使用体验来看，这款商品值得关注。',
-    en: 'From materials to everyday use, this product is worth a closer look.',
+    zh: '以下是这款商品的资料整理。',
+    en: 'Here is a summary of this product.',
   },
-  warm: { zh: '想和你分享一件让日常更舒服的小物。', en: 'Sharing a little find that makes everyday life cozier.' },
+  warm: { zh: '为你整理了这件商品的介绍。', en: 'A short introduction to this item.' },
   premium: {
-    zh: '简约而有质感的选择，值得慢慢了解。',
-    en: 'A understated, well-made choice worth taking your time with.',
+    zh: '这款商品的信息如下。',
+    en: 'Product details below.',
   },
   humorous: {
-    zh: '钱包预警：看完可能就想把它带回家。',
-    en: 'Wallet warning: you may want to take this one home.',
+    zh: '商品资料已就位，往下看～',
+    en: 'Product facts, served fresh.',
   },
 };
 
@@ -659,7 +661,13 @@ export interface MockCopyInput {
 /** Template-based copy grounded in the product row; used without an API key. */
 export function buildMockCopy(input: MockCopyInput): string {
   const { platform, product, audience, sellingPoints, tone, lang } = input;
-  const points = sellingPoints.length ? sellingPoints : ['品质可靠'];
+  // Only merchant-supplied facts. When no selling points exist we fall back
+  // to the stored description, never to an invented quality claim.
+  const points = sellingPoints.length
+    ? sellingPoints
+    : product.description
+      ? [product.description]
+      : [];
   const price = `¥${product.price.toFixed(2)}`;
   const category = product.category || (lang === 'zh' ? '生活好物' : 'everyday goods');
   const tag = product.name.replace(/[^\p{L}\p{N}]/gu, '').slice(0, 12) || 'shoppulse';
@@ -668,28 +676,34 @@ export function buildMockCopy(input: MockCopyInput): string {
     return buildMockCopyEn({ platform, product, audience, points, tone, price, category, tag });
   }
 
+  // With no supplied selling points at all, omit claim-bearing lines.
+  const pointLines = (limit: number): string[] =>
+    points.slice(0, limit).map((point) => `✅ ${point}`);
+  const douyinPointLine = (limit: number): string =>
+    points.length ? `口播：${points.slice(0, limit).join('；')}。` : '';
+
   const opener = TONE_OPENERS[tone].zh;
   const audienceLine = audience ? `特别适合${audience}。` : '';
 
   switch (platform) {
     case 'xiaohongshu':
       return [
-        `${product.name}｜${audience || '日常好物'}分享`,
+        `${product.name}｜${audience ? `${audience}分享` : '商品分享'}`,
         `${PLATFORM_EMOJI.xiaohongshu} ${opener}`,
         audienceLine,
-        ...points.slice(0, 5).map((point) => `✅ ${point}`),
+        ...pointLines(5),
         product.description ? `📝 ${product.description}` : '',
         `💰 参考价 ${price}，具体以下单页面为准。`,
-        `#好物分享 #${category.replace(/\s+/g, '')} #${tag}`,
+        `#商品分享 #${category.replace(/\s+/g, '')} #${tag}`,
       ]
         .filter(Boolean)
         .join('\n');
     case 'moments':
       return [
-        `${PLATFORM_EMOJI.moments} 好物分享｜${product.name}`,
+        `${PLATFORM_EMOJI.moments} 商品分享｜${product.name}`,
         `${opener}${audienceLine}`,
         ...points.slice(0, 3).map((point) => `· ${point}`),
-        `参考价 ${price}，喜欢的朋友可以来店里看看～ 💬`,
+        `参考价 ${price}，详情可咨询店铺客服～ 💬`,
       ]
         .filter(Boolean)
         .join('\n');
@@ -697,18 +711,18 @@ export function buildMockCopy(input: MockCopyInput): string {
       return [
         product.name,
         product.description || opener,
-        '',
-        '【核心卖点】',
+        points.length ? '' : null,
+        points.length ? '【核心卖点】' : null,
         ...points.slice(0, 5).map((point, index) => `${index + 1}. ${point}`),
         '',
         '【商品信息】',
         `分类：${category}`,
         `参考价：${price}`,
-        product.url ? `详情链接：${product.url}` : '',
+        ...(product.url ? [`详情链接：${product.url}`] : []),
         '',
         '📦 温馨提示：库存、活动与最终价格以下单页面为准。',
       ]
-        .filter((line) => line !== undefined)
+        .filter((line): line is string => line !== null)
         .join('\n');
     case 'douyin':
       return [
@@ -718,13 +732,13 @@ export function buildMockCopy(input: MockCopyInput): string {
         `画面：${product.name} 特写，镜头缓慢推进`,
         `口播：${audience ? `如果你也是${audience}，` : ''}先别划走～`,
         '',
-        '3–8 秒｜使用场景',
-        '画面：日常使用场景，展示产品细节',
-        `口播：${points[0]}，用起来更省心。`,
+        '3–8 秒｜产品信息',
+        '画面：展示产品外观与包装',
+        points.length ? `口播：${points[0]}。` : '',
         '',
         '8–18 秒｜卖点展示',
-        '画面：逐条展示产品细节与上手效果',
-        `口播：${points.slice(0, 3).join('；')}。`,
+        '画面：逐条展示产品细节',
+        douyinPointLine(3),
         '',
         '18–25 秒｜价格与行动号召',
         '画面：商品与价格字幕',
@@ -734,8 +748,8 @@ export function buildMockCopy(input: MockCopyInput): string {
         '画面：商品定格 + 店铺标识',
         '口播：有任何问题，评论区见！💬',
         '',
-        `#${category.replace(/\s+/g, '')} #好物推荐 #${tag}`,
-      ].join('\n');
+        `#${category.replace(/\s+/g, '')} #商品信息 #${tag}`,
+      ].filter(Boolean).join('\n');
   }
 }
 
@@ -751,23 +765,23 @@ function buildMockCopyEn(input: {
 }): string {
   const { platform, product, audience, points, tone, price, category, tag } = input;
   const opener = TONE_OPENERS[tone].en;
-  const audienceLine = audience ? ` Perfect for ${audience}.` : '';
+  const audienceLine = audience ? ` For ${audience}.` : '';
 
   switch (platform) {
     case 'xiaohongshu':
       return [
-        `${product.name} | ${audience || 'Everyday pick'}`,
+        `${product.name} | ${audience ? `${audience} pick` : 'Product notes'}`,
         `${PLATFORM_EMOJI.xiaohongshu} ${opener}${audienceLine}`,
         ...points.slice(0, 5).map((point) => `✅ ${point}`),
         product.description ? `📝 ${product.description}` : '',
         `💰 Reference price ${price}; the checkout page is final.`,
-        `#finds #${category.replace(/\s+/g, '')} #${tag}`,
+        `#product #${category.replace(/\s+/g, '')} #${tag}`,
       ]
         .filter(Boolean)
         .join('\n');
     case 'moments':
       return [
-        `${PLATFORM_EMOJI.moments} A little find: ${product.name}`,
+        `${PLATFORM_EMOJI.moments} Product notes: ${product.name}`,
         `${opener}${audienceLine}`,
         ...points.slice(0, 3).map((point) => `· ${point}`),
         `Reference price ${price}. Drop by the store if you are interested 💬`,
@@ -778,18 +792,18 @@ function buildMockCopyEn(input: {
       return [
         product.name,
         product.description || opener,
-        '',
-        'Key selling points',
+        points.length ? '' : null,
+        points.length ? 'Key selling points' : null,
         ...points.slice(0, 5).map((point, index) => `${index + 1}. ${point}`),
         '',
         'Product facts',
         `Category: ${category}`,
         `Reference price: ${price}`,
-        product.url ? `Details: ${product.url}` : '',
+        ...(product.url ? [`Details: ${product.url}`] : []),
         '',
         '📦 Note: stock, promotions and the final price are confirmed on the checkout page.',
       ]
-        .filter(Boolean)
+        .filter((line): line is string => line !== null && line !== undefined)
         .join('\n');
     case 'douyin':
       return [
@@ -799,13 +813,13 @@ function buildMockCopyEn(input: {
         `Visual: close-up of ${product.name}, slow push-in`,
         `Voice-over: ${audience ? `If you are ${audience}, ` : ''}don’t scroll yet.`,
         '',
-        '3–8s | Everyday use',
-        `Visual: product in real use, detail shots`,
-        `Voice-over: ${points[0]} — easier every day.`,
+        '3–8s | Product details',
+        'Visual: product and packaging shots',
+        points.length ? `Voice-over: ${points[0]}.` : '',
         '',
         '8–18s | Selling points',
         'Visual: show each detail in turn',
-        `Voice-over: ${points.slice(0, 3).join('; ')}.`,
+        points.length ? `Voice-over: ${points.slice(0, 3).join('; ')}.` : '',
         '',
         '18–25s | Price and CTA',
         'Visual: product with price caption',
@@ -815,7 +829,7 @@ function buildMockCopyEn(input: {
         'Visual: product frozen frame + shop mark',
         'Voice-over: Questions? See you in the comments! 💬',
         '',
-        `#${category.replace(/\s+/g, '')} #finds #${tag}`,
-      ].join('\n');
+        `#${category.replace(/\s+/g, '')} #product #${tag}`,
+      ].filter(Boolean).join('\n');
   }
 }

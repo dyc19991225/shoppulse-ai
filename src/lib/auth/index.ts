@@ -45,7 +45,9 @@ export async function getSessionUser(request: NextRequest): Promise<string | nul
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   let secret: string;
   try {
-    secret = loadConfig().sessionSecret;
+    // Session handling must work even when the LLM key is missing so the
+    // admin can still sign in and inspect a misconfigured deployment.
+    secret = loadConfig(undefined, { checkLlmReady: false }).sessionSecret;
   } catch {
     return null;
   }

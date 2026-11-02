@@ -1,3 +1,5 @@
+import { parseBool } from './env-bool';
+
 /**
  * In-memory fixed-window rate limiter. Suitable for a single Node process
  * (the production deployment is one instance).
@@ -81,12 +83,30 @@ export function resetLoginLimiter(): void {
   loginLimiter = null;
 }
 
-/** Best-effort client IP from proxy headers, falling back to "unknown". */
+/**
+ * Client IP used as the rate-limit key.
+ *
+ * X-Forwarded-For is attacker-controlled unless a trusted reverse proxy sits in
+ * front and appends the peer address. With SHOPPULSE_TRUST_PROXY=1 we take the
+ * right-most hop (the one added by our proxy) and ignore everything the client
+ * wrote before it. Without the flag we ignore forwarding headers entirely and
+ * use only the server-controlled request address.
+ */
 export function clientIp(request: Request): string {
-  const forwarded = request.headers.get('x-forwarded-for');
-  if (forwarded) {
-    const first = forwarded.split(',')[0]?.trim();
-    if (first) return first;
+  if (parseBool(process.env.SHOPPULSE_TRUST_PROXY)) {
+    const forwarded = request.headers.get('x-forwarded-for');
+    if (forwarded) {
+      const hops = forwarded
+        .split(',')
+        .map((hop) => hop.trim())
+        .filter(Boolean);
+      const trusted = hops.at(-1);
+      if (trusted) return trusted.slice(0, 64);
+    }
+    return 'unknown';
   }
-  return request.headers.get('x-real-ip')?.trim() || 'unknown';
+
+  // NextRequest exposes the socket address; plain Requests in tests may not.
+  const address = (request as { ip?: unknown }).ip;
+  return typeof address === 'string' && address.trim() ? address.trim() : 'unknown';
 }

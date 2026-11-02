@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { normalizeOrigin } from './cors';
+import { resolvePublicBaseUrl } from './public-url';
 
 /**
  * Site (widget installation) helpers: site-key generation, origin validation
@@ -71,15 +72,11 @@ export function embedSnippet(siteKey: string, siteUrl = 'https://YOUR-DOMAIN'): 
   return `<script src="${base}/widget.js" data-site-key="${siteKey}" async></script>`;
 }
 
-/** Extracts the request origin for snippet generation (first proxy hop wins). */
+/**
+ * Base URL for embed snippets. Never trusts client-supplied Host headers:
+ * `SHOPPULSE_PUBLIC_BASE_URL` wins, trusted proxy headers require
+ * SHOPPULSE_TRUST_PROXY=1, and the server-built request URL is the fallback.
+ */
 export function requestBaseUrl(request: Request): string {
-  const first = (value: string | null): string => (value ?? '').split(',')[0].trim();
-  const forwardedProto = first(request.headers.get('x-forwarded-proto'));
-  const forwardedHost = first(request.headers.get('x-forwarded-host')) ||
-    first(request.headers.get('host'));
-  if (forwardedHost) {
-    const proto = forwardedProto === 'https' ? 'https' : 'http';
-    return `${proto}://${forwardedHost}`;
-  }
-  return new URL(request.url).origin;
+  return resolvePublicBaseUrl(request.headers, { requestUrl: request.url });
 }

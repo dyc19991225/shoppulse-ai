@@ -41,7 +41,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   let config;
   try {
-    config = loadConfig();
+    // Sign-in must keep working while the LLM is misconfigured so an admin can
+    // reach the console and fix the deployment.
+    config = loadConfig(undefined, { checkLlmReady: false });
   } catch (error) {
     if (error instanceof ConfigError) {
       return NextResponse.json({ error: 'not_configured' }, { status: 500 });

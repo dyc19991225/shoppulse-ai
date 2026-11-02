@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { ConfigError, loadConfig } from '@/lib/config';
+import { ConfigError, loadConfig, parseBool } from '@/lib/config';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,18 +23,17 @@ export interface HealthPayload {
  */
 export function GET(): NextResponse<HealthPayload> {
   const hasApiKey = Boolean(process.env.SHOPPULSE_LLM_API_KEY?.trim());
-  const requireLlm =
-    process.env.SHOPPULSE_REQUIRE_LLM === '1' ||
-    process.env.SHOPPULSE_REQUIRE_LLM?.toLowerCase() === 'true';
+  const requireLlm = parseBool(process.env.SHOPPULSE_REQUIRE_LLM);
   const model = process.env.SHOPPULSE_LLM_MODEL?.trim() || 'deepseek-v4.1-flash';
 
   let mode: HealthPayload['llm']['mode'] = hasApiKey ? 'llm' : 'mock';
   if (!hasApiKey && requireLlm) mode = 'misconfigured';
 
   try {
-    // Full config validation catches other production misconfigurations
-    // (missing SESSION_SECRET / ADMIN_PASSWORD_HASH).
-    loadConfig();
+    // Core config validation catches other production misconfigurations
+    // (missing SESSION_SECRET / ADMIN_PASSWORD_HASH). LLM readiness is
+    // derived above so a missing key never prevents the probe from answering.
+    loadConfig(undefined, { checkLlmReady: false });
   } catch (error) {
     if (error instanceof ConfigError) {
       mode = 'misconfigured';

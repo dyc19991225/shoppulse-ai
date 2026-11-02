@@ -51,9 +51,14 @@ export function detectHandoff(message: string): HandoffDetection {
   return { needed: false, reason: null };
 }
 
+/**
+ * The app records the request for staff (needs_human flag + admin queue); it
+ * does not send an out-of-band notification. The wording must say exactly
+ * that instead of claiming an agent was notified or a live transfer happened.
+ */
 export const HANDOFF_NOTICE = {
-  zh: '已为您转接人工客服，客服会在营业时间内尽快与您联系。您也可以继续在此留言。',
-  en: 'A human agent has been notified and will get back to you during business hours. You can keep leaving messages here.',
+  zh: '已记录您的转人工请求，客服会在营业时间内查看并尽快回复。您也可以继续在此留言。',
+  en: 'Your request for a human agent has been recorded for our staff, who will review it during business hours. You can keep leaving messages here.',
 } as const;
 
 export function handoffNotice(locale: 'zh' | 'en'): string {

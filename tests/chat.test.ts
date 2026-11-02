@@ -64,7 +64,12 @@ async function collect(
   site: Site,
   message: string,
   provider: LlmProvider = new MockProvider(),
-  extra: { conversationId?: string | null; newId?: () => string; locale?: 'zh' | 'en' } = {},
+  extra: {
+    conversationId?: string | null;
+    visitorId?: string | null;
+    newId?: () => string;
+    locale?: 'zh' | 'en';
+  } = {},
 ): Promise<ChatEvent[]> {
   const events: ChatEvent[] = [];
   for await (const event of runChat({
@@ -181,11 +186,18 @@ describe('runChat', () => {
     createKbEntry(db, { title: '物流', content: '48 小时内发货。', keywords: '发货 物流' });
 
     const sharedIds = ids();
-    const first = await collect(db, site, '你们的物流多久发货？', undefined, { newId: sharedIds });
+    const first = await collect(db, site, '你们的物流多久发货？', undefined, {
+      newId: sharedIds,
+      visitorId: 'visitor-1',
+    });
     const conversationId = (first[0] as Extract<ChatEvent, { event: 'meta' }>).data.conversationId;
 
     const provider = new RecordingProvider('好的');
-    await collect(db, site, '那我退货呢？', provider, { conversationId, newId: sharedIds });
+    await collect(db, site, '那我退货呢？', provider, {
+      conversationId,
+      newId: sharedIds,
+      visitorId: 'visitor-1',
+    });
 
     const roles = provider.lastMessages.map((message) => message.role);
     expect(roles).toEqual(['system', 'user', 'assistant', 'user']);
@@ -205,15 +217,21 @@ describe('runChat', () => {
     expect(meta.data.conversationId).not.toBe('foreign');
   });
 
-  it('appends a correction when the model invents a price', async () => {
+  it('redacts an invented price before it is emitted or stored', async () => {
     const { db, site } = setup();
     createProduct(db, { name: '洗碗巾', price: 29.9, stock: 1 });
 
     const provider = new RecordingProvider('这款洗碗巾现在特价 ¥9.9 哦！');
     const events = await collect(db, site, '洗碗巾多少钱', provider);
     const text = textOf(events);
-    expect(text).toContain('¥9.9');
+    expect(text).not.toContain('¥9.9');
+    expect(text).toContain('金额未核实');
     expect(text).toMatch(/价格提示/);
+
+    const meta = events[0] as Extract<ChatEvent, { event: 'meta' }>;
+    const stored = listMessages(db, meta.data.conversationId).at(-1)!;
+    expect(stored.content).not.toContain('¥9.9');
+    expect(stored.content).toContain('金额未核实');
   });
 
   it('does not flag prices that exist in context', async () => {
@@ -223,6 +241,27 @@ describe('runChat', () => {
     const provider = new RecordingProvider('这款洗碗巾 ¥29.9。');
     const events = await collect(db, site, '洗碗巾多少钱', provider);
     expect(textOf(events)).not.toMatch(/价格提示/);
+  });
+
+  it('does not expose raw provider errors in the error event', async () => {
+    const { db, site } = setup();
+    const failing: LlmProvider = {
+      kind: 'openai',
+      model: 'x',
+      async *stream(): AsyncGenerator<string> {
+        throw new Error('upstream gateway 10.0.0.5 refused key sk-secret');
+      },
+      async complete() {
+        return '';
+      },
+    };
+
+    const events = await collect(db, site, '你好', failing);
+    const error = events.find(
+      (event): event is Extract<ChatEvent, { event: 'error' }> => event.event === 'error',
+    );
+    expect(error?.data.message).toBe('llm_unavailable');
+    expect(JSON.stringify(events)).not.toContain('sk-secret');
   });
 
   it('emits an error event and keeps the user turn when the model fails', async () => {
@@ -264,15 +303,39 @@ describe('runChat', () => {
     expect(getConversation(db, meta.data.conversationId)!.topIntent).toBe('after_sale');
   });
 
-  it('uses an existing conversation created directly in the DB', async () => {
+  it('resumes an existing conversation only with the matching visitor id', async () => {
     const { db, site } = setup();
-    createConversation(db, { id: 'existing', siteId: site.id });
+    createConversation(db, { id: 'existing', siteId: site.id, visitorId: 'v-owner' });
     addMessage(db, { id: 'u1', conversationId: 'existing', role: 'user', content: 'hi' });
 
-    const events = await collect(db, site, '你好', undefined, { conversationId: 'existing' });
+    const events = await collect(db, site, '你好', undefined, {
+      conversationId: 'existing',
+      visitorId: 'v-owner',
+    });
     expect((events[0] as Extract<ChatEvent, { event: 'meta' }>).data.conversationId).toBe('existing');
     expect(listMessages(db, 'existing')).toHaveLength(3);
   });
+
+  it('refuses to resume a conversation without a matching nonempty visitor id', async () => {
+    const { db, site } = setup();
+    createConversation(db, { id: 'victim', siteId: site.id, visitorId: 'v-victim' });
+    addMessage(db, { id: 'u1', conversationId: 'victim', role: 'user', content: 'secret history' });
+
+    for (const [attempt, visitorId] of [undefined, null, '', 'v-attacker'].entries()) {
+      const provider = new RecordingProvider('hello');
+      const events = await collect(db, site, '你好', provider, {
+        conversationId: 'victim',
+        visitorId,
+        newId: () => `fresh-${attempt}-${Math.random().toString(36).slice(2)}`,
+      });
+      const meta = events[0] as Extract<ChatEvent, { event: 'meta' }>;
+      expect(meta.data.conversationId).not.toBe('victim');
+      // The model never sees the victim's history.
+      expect(JSON.stringify(provider.lastMessages)).not.toContain('secret history');
+    }
+    expect(listMessages(db, 'victim')).toHaveLength(1);
+  });
+
 });
 
 describe('buildSystemPrompt', () => {

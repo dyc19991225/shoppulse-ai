@@ -3,7 +3,14 @@ import { loadConfig } from '@/lib/config';
 import { getSiteByKey, listSites } from '@/lib/db';
 import { getDb } from '@/lib/db-runtime';
 import { createProvider, LlmError } from '@/lib/llm';
-import { ChatInputError, runChat, validateMessage, type ChatEvent } from '@/lib/chat';
+import {
+  ChatInputError,
+  MAX_CHAT_BODY_BYTES,
+  runChat,
+  validateMessage,
+  type ChatEvent,
+} from '@/lib/chat';
+import { BodyTooLargeError, readJsonObjectWithLimit } from '@/lib/http-body';
 import { applyCors, checkCors } from '@/lib/cors';
 import { clientIp } from '@/lib/ratelimit';
 import { checkWidgetRateLimit } from '@/lib/widget-ratelimit';
@@ -41,16 +48,22 @@ function corsJson(
 /**
  * Public chat endpoint (AC5.1–AC5.6, AC6.2–AC6.3).
  *
- * Order of checks: body → site key → CORS → rate limit → validation → SSE.
- * The response is a hand-rolled ReadableStream so we control flushing and can
- * abort the provider when the client disconnects.
+ * Order of checks: body size/parse → site key → CORS → rate limit → validation
+ * → SSE. The body is capped before parsing so public requests cannot buffer
+ * unbounded JSON. The response is a hand-rolled ReadableStream so we control
+ * flushing and can abort the provider when the client disconnects.
  */
 export async function POST(request: NextRequest): Promise<Response> {
   let body: ChatBody;
   try {
-    body = (await request.json()) as ChatBody;
-  } catch {
-    return NextResponse.json({ error: 'invalid_json' }, { status: 400 });
+    const parsed = await readJsonObjectWithLimit(request, MAX_CHAT_BODY_BYTES);
+    if (!parsed) return NextResponse.json({ error: 'invalid_json' }, { status: 400 });
+    body = parsed as ChatBody;
+  } catch (error) {
+    if (error instanceof BodyTooLargeError) {
+      return NextResponse.json({ error: 'body_too_large' }, { status: 413 });
+    }
+    throw error;
   }
 
   const siteKey = typeof body.siteKey === 'string' ? body.siteKey.trim() : '';
@@ -121,16 +134,17 @@ export async function POST(request: NextRequest): Promise<Response> {
           send(event);
         }
       } catch (error) {
+        // Never leak provider/gateway details to the browser. The fixed code
+        // is enough for the widget to show its generic error message; stack
+        // details stay on the server (without message contents or keys).
+        console.warn('[widget] chat stream failed', {
+          name: error instanceof Error ? error.name : 'unknown',
+          llm: error instanceof LlmError,
+          status: error instanceof LlmError ? error.status : undefined,
+        });
         send({
           event: 'error',
-          data: {
-            message:
-              error instanceof LlmError
-                ? 'llm_unavailable'
-                : error instanceof Error
-                  ? error.message
-                  : 'chat_failed',
-          },
+          data: { message: error instanceof LlmError ? 'llm_unavailable' : 'chat_failed' },
         });
       } finally {
         try {

@@ -29,7 +29,7 @@ describe('dictionaries', () => {
     expect(translate('en', 'login.title')).toBe('Merchant sign-in');
     expect(
       translate('en', 'widget.handoff', { ignored: 'x' }),
-    ).toBe('Connecting you to a human agent, please wait');
+    ).toBe('Your human-agent request has been recorded for our staff');
   });
 });
 

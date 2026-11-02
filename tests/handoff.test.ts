@@ -48,7 +48,17 @@ describe('detectHandoff', () => {
 
 describe('handoffNotice', () => {
   it('returns localized notices', () => {
-    expect(handoffNotice('zh')).toMatch(/人工客服/);
+    expect(handoffNotice('zh')).toMatch(/人工/);
     expect(handoffNotice('en')).toMatch(/human agent/i);
+  });
+
+  it('says the request was recorded, never that an agent was notified', () => {
+    const zh = handoffNotice('zh');
+    const en = handoffNotice('en');
+    expect(zh).toContain('已记录');
+    expect(en).toMatch(/has been recorded/i);
+    for (const text of [zh, en]) {
+      expect(text).not.toMatch(/已为您转接|already connected|has been notified|正在接入/i);
+    }
   });
 });

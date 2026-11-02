@@ -275,6 +275,10 @@ export function importProducts(
     total: parsed.rows.length,
   };
 
+  // Each row runs in its own nested transaction (SQLite savepoint) so a bad
+  // row is rolled back alone. Without a savepoint, a thrown row error would
+  // abort the whole transaction while `result` still counted earlier rows as
+  // created/updated even though they were later rolled back.
   const apply = db.transaction(() => {
     parsed.rows.forEach((row, index) => {
       const rowNumber = parsed.rowNumbers[index] ?? index + 2;
@@ -352,14 +356,18 @@ export function importProducts(
           return;
         }
 
-        const existing = input.sku ? getProductBySku(db, input.sku) : null;
-        if (existing) {
-          updateProduct(db, existing.id, input);
-          result.updated += 1;
-        } else {
+        // Nested transaction => savepoint: a failed row affects only itself.
+        const applyRow = db.transaction(() => {
+          const existing = input.sku ? getProductBySku(db, input.sku) : null;
+          if (existing) {
+            updateProduct(db, existing.id, input);
+            return 'updated' as const;
+          }
           createProduct(db, input);
-          result.created += 1;
-        }
+          return 'created' as const;
+        });
+        if (applyRow() === 'updated') result.updated += 1;
+        else result.created += 1;
       } catch (error) {
         result.failed += 1;
         result.errors.push({

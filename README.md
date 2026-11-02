@@ -77,7 +77,9 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 | `SHOPPULSE_LLM_MODEL` | `deepseek-v4.1-flash` | 模型名 |
 | `SHOPPULSE_LLM_API_KEY` | 空 | 网关密钥；为空时 Mock 模式；切勿提交 |
 | `SHOPPULSE_LLM_TIMEOUT_MS` | `60000` | LLM 请求超时 |
-| `SHOPPULSE_REQUIRE_LLM` | `0` | `1` 时缺 Key 即视为配置错误，不回退 Mock |
+| `SHOPPULSE_REQUIRE_LLM` | `0` | 支持 `1/true/yes/on`；启用时缺 Key 即视为配置错误，不回退 Mock |
+| `SHOPPULSE_TRUST_PROXY` | `0` | 设为 `1`（仅限经 Caddy 反代部署）时用 X-Forwarded-For 最右侧一跳做限流键 |
+| `SHOPPULSE_PUBLIC_BASE_URL` | 空 | 嵌入代码使用的规范外部 origin，例如 `https://shop-ai.dycxy.shop` |
 | `ADMIN_USERNAME` | `admin` | 管理员用户名 |
 | `ADMIN_PASSWORD_HASH` | 空 | scrypt `salt:hash`，生产必填 |
 | `ADMIN_PASSWORD` | 空 | 仅开发环境可用的明文回退 |

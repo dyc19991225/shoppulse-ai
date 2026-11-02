@@ -459,15 +459,15 @@ describe('docs', () => {
     expect(deploy).toContain('TBD');
   });
 
-  it('DELIVERY has features, acceptance checklist, embed snippet and empty results section', () => {
+  it('DELIVERY has features, acceptance checklist, embed snippet and acceptance results', () => {
     const delivery = read('DELIVERY.md');
     expect(delivery).toContain('## 1. 功能清单');
     expect(delivery).toContain('## 2. 挂件嵌入代码');
     expect(delivery).toContain('## 3. 管理员指南');
     expect(delivery).toContain('## 4. 验收清单');
     expect(delivery).toContain('## 5. Acceptance results');
-    expect(delivery).toContain('_TBD_');
     expect(delivery).toContain('data-site-key=');
+    // Deployment remains pending until the user confirms.
     expect(delivery).toContain('TBD');
   });
 });

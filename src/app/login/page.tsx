@@ -33,7 +33,7 @@ export default async function LoginPage({
   // Surface configuration problems before the user types a password.
   let configured = true;
   try {
-    const config = loadConfig();
+    const config = loadConfig(undefined, { checkLlmReady: false });
     configured = Boolean(config.sessionSecret && (config.admin.passwordHash || config.admin.password));
   } catch {
     configured = false;

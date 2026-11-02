@@ -200,6 +200,35 @@ describe('product import API', () => {
     expect(noFile.status).toBe(400);
   });
 
+  it('rejects an oversized multipart body before parsing, even without Content-Length', async () => {
+    // Build real multipart bytes, then send them as an unbounded stream so the
+    // request carries no Content-Length header.
+    const form = new FormData();
+    form.append('file', new File(['x'.repeat(5 * 1024 * 1024 + 128 * 1024)], 'big.csv'));
+    const raw = new Uint8Array(await new Response(form).arrayBuffer());
+    const contentType = new Response(form).headers.get('content-type')!;
+
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let offset = 0; offset < raw.length; offset += 64 * 1024) {
+          controller.enqueue(raw.slice(offset, offset + 64 * 1024));
+        }
+        controller.close();
+      },
+    });
+    const request = new NextRequest('http://localhost/api/admin/products/import', {
+      method: 'POST',
+      headers: { 'content-type': contentType },
+      body,
+      ...({ duplex: 'half' } as { duplex?: 'half' }),
+    });
+    expect(request.headers.get('content-length')).toBeNull();
+
+    const res = await importProductsRoute(request);
+    expect(res.status).toBe(413);
+    expect((await res.json()).error).toBe('file_too_large');
+  });
+
   it('serves the CSV template', async () => {
     const res = downloadTemplate();
     expect(res.status).toBe(200);

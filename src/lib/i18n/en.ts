@@ -250,7 +250,7 @@ export const en: Record<DictionaryKey, string> = {
   'widget.title': 'Customer support',
   'widget.placeholder': 'Type your question…',
   'widget.send': 'Send',
-  'widget.handoff': 'Connecting you to a human agent, please wait',
+  'widget.handoff': 'Your human-agent request has been recorded for our staff',
   'widget.error': 'Network error. Please try again.',
   'widget.poweredBy': 'Powered by ShopPulse AI',
   'widget.demoHint': 'Click the floating button in the bottom-right corner to try streaming replies, product cards and human handoff.',

@@ -19,6 +19,23 @@ export interface PriceGuardResult {
   flagged: boolean;
 }
 
+export type PriceGuardLocale = 'zh' | 'en';
+
+const REDACTION = {
+  zh: '（金额未核实）',
+  en: '(amount unverified)',
+} as const;
+
+const NOTICE = {
+  zh: '\n\n（价格提示：回答中的部分金额未在店铺资料中核实，已隐去；请以商品卡片显示的价格为准，或联系客服确认。）',
+  en: '\n\n(Price note: some amounts could not be verified in the store data and were hidden. Please rely on the product cards and confirm with support.)',
+} as const;
+
+/** Localized notice appended after unverified amounts were redacted. */
+export function priceGuardNotice(locale: PriceGuardLocale = 'zh'): string {
+  return NOTICE[locale];
+}
+
 const CURRENCY_AMOUNT = new RegExp(
   [
     // ¥29.9 / ￥29.9 / $29.9 / €29.9
@@ -81,6 +98,52 @@ function isAllowed(value: number, allowed: Set<number>): boolean {
   return false;
 }
 
+/**
+ * Replaces every unverified currency amount in `text` with a neutral
+ * placeholder. The placeholder carries no digits or currency anchor, so it can
+ * never be mistaken for a price (and cannot re-trigger the guard).
+ */
+export function redactUnverifiedPrices(
+  text: string,
+  allowed: Set<number> | readonly string[] | readonly number[],
+  locale: PriceGuardLocale = 'zh',
+): PriceGuardResult & { text: string } {
+  const allowedSet =
+    allowed instanceof Set
+      ? allowed
+      : allowed.every((entry): entry is number => typeof entry === 'number')
+        ? collectAllowedPrices([], allowed as readonly number[])
+        : collectAllowedPrices((allowed as readonly string[]).map(String));
+
+  const invented: number[] = [];
+  const snippets: string[] = [];
+  const seen = new Set<number>();
+  let output = '';
+  let cursor = 0;
+
+  CURRENCY_AMOUNT.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = CURRENCY_AMOUNT.exec(text)) !== null) {
+    const raw = match[1] ?? match[2] ?? match[3];
+    if (raw === undefined) continue;
+    const value = toNumber(raw);
+    if (!Number.isFinite(value)) continue;
+    if (isAllowed(value, allowedSet)) continue;
+
+    const rounded = Math.round(value * 100) / 100;
+    output += text.slice(cursor, match.index) + REDACTION[locale];
+    cursor = match.index + match[0].length;
+    if (!seen.has(rounded)) {
+      seen.add(rounded);
+      invented.push(rounded);
+      snippets.push(match[0].trim());
+    }
+  }
+
+  output += text.slice(cursor);
+  return { invented, snippets, flagged: invented.length > 0, text: output };
+}
+
 /** Compares prices in `answer` with the allowed set. */
 export function checkPriceFabrication(
   answer: string,
@@ -118,13 +181,129 @@ export function checkPriceFabrication(
 export function applyPriceGuard(
   answer: string,
   allowed: Set<number> | readonly string[] | readonly number[],
-  locale: 'zh' | 'en' = 'zh',
+  locale: PriceGuardLocale = 'zh',
 ): PriceGuardResult & { text: string } {
-  const result = checkPriceFabrication(answer, allowed);
-  if (!result.flagged) return { ...result, text: answer };
-  const notice =
-    locale === 'en'
-      ? '\n\n(Price note: some amounts above could not be verified in the store data. Please rely on the product cards and confirm with support.)'
-      : '\n\n（价格提示：以上回答中的部分金额未在店铺资料中核实，请以商品卡片显示的价格为准，或联系客服确认。）';
-  return { ...result, text: answer + notice };
+  const redacted = redactUnverifiedPrices(answer, allowed, locale);
+  if (!redacted.flagged) return redacted;
+  return { ...redacted, text: redacted.text + priceGuardNotice(locale) };
+}
+
+// ---------------------------------------------------------------------------
+// Streaming guard
+// ---------------------------------------------------------------------------
+
+/** True when `suffix` could still grow into a currency amount. */
+function isOpenAmountSuffix(suffix: string): boolean {
+  return (
+    // ¥ / ￥ / $ / € with an optional (possibly growing) number after it.
+    /^[¥￥$€]\s*[\d,.]*$/u.test(suffix) ||
+    // Currency keyword with a growing number after it.
+    /^(?:RMB|CNY|USD)\s*[\d,.]*$/i.test(suffix) ||
+    // A trailing number (possibly followed by a unit/keyword that is itself
+    // being typed, e.g. "58 R" -> "58 RMB").
+    /^[\d,.]+\s*(?:R|RM|RMB|C|CN|CNY|U|US|USD|yuan|元|块钱|人民币|块|人)?\s*$/i.test(
+      suffix,
+    ) ||
+    // A currency keyword split across chunks at the very end.
+    /^(?:R|RM|C|CN|U|US)$/i.test(suffix)
+  );
+}
+
+/**
+ * Extends a held-back cut backwards so a currency marker is never split from
+ * the amount it introduces ("¥" + "9.9", "RMB " + "58").
+ */
+function extendHoldStart(text: string, index: number): number {
+  let start = index;
+  for (;;) {
+    let probe = start;
+    while (probe > 0 && /\s/.test(text[probe - 1])) probe -= 1;
+    if (probe > 0 && /[¥￥$€]/.test(text[probe - 1])) {
+      start = probe - 1;
+      continue;
+    }
+    const prefix = text.slice(0, probe);
+    const keyword = /(?:RMB|CNY|USD)$/i.exec(prefix);
+    if (keyword) {
+      start = probe - keyword[0].length;
+      continue;
+    }
+    return start;
+  }
+}
+
+/**
+ * Index up to which `text` is safe to emit: everything after the earliest
+ * position that could start a growing currency amount is held back.
+ */
+export function safeEmitIndex(text: string): number {
+  const windowStart = Math.max(0, text.length - 64);
+  for (let index = windowStart; index < text.length; index += 1) {
+    if (isOpenAmountSuffix(text.slice(index))) {
+      return extendHoldStart(text, index);
+    }
+  }
+  // A number run longer than the scan window (pathological) must still be
+  // held from its start rather than split.
+  if (windowStart > 0 && /[0-9A-Za-z,.]$/.test(text.slice(0, windowStart))) {
+    let start = windowStart;
+    while (start > 0 && /[0-9A-Za-z,.]/.test(text[start - 1])) start -= 1;
+    return start;
+  }
+  return text.length;
+}
+
+export interface StreamPriceGuardResult {
+  /** Text safe to display (unverified amounts redacted). */
+  text: string;
+  /** True when at least one amount was redacted so far. */
+  flagged: boolean;
+}
+
+export interface StreamPriceGuard {
+  /** Feeds a model chunk and returns the now-verifiable output. */
+  push(chunk: string): StreamPriceGuardResult;
+  /** Ends the stream: verifies/redacts whatever was held back. */
+  flush(): StreamPriceGuardResult;
+  /** Whether any amount has been redacted across the stream. */
+  readonly flagged: boolean;
+}
+
+/**
+ * Incremental price guard for SSE output (AC5.3). Only a short tail that could
+ * still become a currency amount is buffered; the rest streams immediately.
+ */
+export function createStreamPriceGuard(
+  allowed: Set<number> | readonly string[] | readonly number[],
+  locale: PriceGuardLocale = 'zh',
+): StreamPriceGuard {
+  let pending = '';
+  let flagged = false;
+
+  const flushBuffer = (): StreamPriceGuardResult => {
+    if (!pending) return { text: '', flagged };
+    const redacted = redactUnverifiedPrices(pending, allowed, locale);
+    pending = '';
+    if (redacted.flagged) flagged = true;
+    return { text: redacted.text, flagged };
+  };
+
+  return {
+    push(chunk: string): StreamPriceGuardResult {
+      pending += chunk;
+      const cutoff = safeEmitIndex(pending);
+      if (cutoff <= 0) return { text: '', flagged };
+      const head = pending.slice(0, cutoff);
+      pending = pending.slice(cutoff);
+      const redacted = redactUnverifiedPrices(head, allowed, locale);
+      if (redacted.flagged) flagged = true;
+      return { text: redacted.text, flagged };
+    },
+    flush(): StreamPriceGuardResult {
+      return flushBuffer();
+    },
+    get flagged(): boolean {
+      return flagged;
+    },
+  };
 }

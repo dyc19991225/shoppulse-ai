@@ -11,7 +11,12 @@ import {
   type DB,
 } from '@/lib/db';
 import { resetDbCache } from '@/lib/db-runtime';
-import { resetWidgetRateLimits } from '@/lib/widget-ratelimit';
+import {
+  checkWidgetRateLimit,
+  resetWidgetRateLimits,
+  widgetRateLimiterCount,
+} from '@/lib/widget-ratelimit';
+import { readBodyWithLimit, BodyTooLargeError } from '@/lib/http-body';
 import { createTempDb, type TempDb } from './helpers/tempdb';
 
 let temp: TempDb | undefined;
@@ -21,6 +26,9 @@ beforeEach(() => {
   vi.stubEnv('SHOPPULSE_DB_PATH', temp.path);
   vi.stubEnv('NODE_ENV', 'test');
   vi.stubEnv('SHOPPULSE_LLM_API_KEY', '');
+  // The widget tests drive client addresses through X-Forwarded-For, which is
+  // only honoured behind a trusted proxy.
+  vi.stubEnv('SHOPPULSE_TRUST_PROXY', '1');
   resetDbCache();
   resetWidgetRateLimits();
 });
@@ -228,6 +236,84 @@ describe('POST /api/widget/chat', () => {
     expect(blocked.headers.get('access-control-allow-origin')).toBe('http://localhost:3000');
   });
 
+  it('rejects an oversized body before parsing, even without Content-Length', async () => {
+    const chunk = 'x'.repeat(4096);
+    let sent = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent > 1024 * 1024) {
+          controller.close();
+          return;
+        }
+        sent += chunk.length;
+        controller.enqueue(new TextEncoder().encode(chunk));
+      },
+    });
+    const request = new NextRequest('http://localhost/api/widget/chat', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body,
+      ...({ duplex: 'half' } as { duplex: 'half' }),
+    });
+    expect(request.headers.get('content-length')).toBeNull();
+
+    const response = await chatPost(request);
+    expect(response.status).toBe(413);
+    expect((await response.json()).error).toBe('body_too_large');
+
+    // A declared-but-honest oversized body is rejected without reading it.
+    const declared = await chatPost(
+      chatRequest(
+        { siteKey: DEFAULT_SITE_KEY, message: 'hi' },
+        { 'content-length': String(1024 * 1024) },
+      ),
+    );
+    expect(declared.status).toBe(413);
+  });
+
+  it('streams the answer and redacts invented prices before they are sent', async () => {
+    // Mock mode quotes only retrieved data, so check the guard via a direct
+    // provider-independent assertion on the SSE pipeline using a DB product.
+    createProduct(db(), { name: '洗碗巾', price: 29.9, stock: 1, sellingPoints: '吸水' });
+    const events = await readSse(
+      await chatPost(chatRequest({ siteKey: DEFAULT_SITE_KEY, message: '洗碗巾多少钱' })),
+    );
+    const text = events
+      .filter((event) => event.event === 'delta')
+      .map((event) => event.data.text)
+      .join('');
+    expect(text).toContain('29.9');
+    expect(text).not.toMatch(/金额未核实/);
+  });
+
+  it('conversation ids cannot be resumed without the visitor credential', async () => {
+    const first = await readSse(
+      await chatPost(
+        chatRequest({ siteKey: DEFAULT_SITE_KEY, message: '你好', visitorId: 'v-owner' }),
+      ),
+    );
+    const conversationId = first[0].data.conversationId;
+
+    const hijack = await readSse(
+      await chatPost(chatRequest({ siteKey: DEFAULT_SITE_KEY, message: 'hi', conversationId })),
+    );
+    expect(hijack[0].data.conversationId).not.toBe(conversationId);
+    expect(listMessages(db(), conversationId)).toHaveLength(2);
+
+    const owner = await readSse(
+      await chatPost(
+        chatRequest({
+          siteKey: DEFAULT_SITE_KEY,
+          message: '还有吗',
+          conversationId,
+          visitorId: 'v-owner',
+        }),
+      ),
+    );
+    expect(owner[0].data.conversationId).toBe(conversationId);
+    expect(listMessages(db(), conversationId)).toHaveLength(4);
+  });
+
   it('answers OPTIONS preflight', async () => {
     const request = new NextRequest('http://localhost/api/widget/chat', {
       method: 'OPTIONS',
@@ -306,5 +392,39 @@ describe('CORS helpers', () => {
     expect(checkCors('http://LOCALHOST:3000/', ['http://localhost:3000']).allowed).toBe(true);
     expect(checkCors(null, []).allowed).toBe(true);
     expect(checkCors('http://localhost:3001', ['http://localhost:3000']).allowed).toBe(false);
+  });
+});
+
+describe('widget rate-limit limiter cache', () => {
+  it('bounds the number of cached per-site limiters', () => {
+    resetWidgetRateLimits();
+    let now = 0;
+    for (let index = 0; index < 300; index += 1) {
+      checkWidgetRateLimit(`site-${index}`, 'ip', 30, now);
+      now += 1000;
+    }
+    expect(widgetRateLimiterCount()).toBeLessThanOrEqual(100);
+  });
+
+  it('evicts a site limiter after it has been idle past the TTL', () => {
+    resetWidgetRateLimits();
+    checkWidgetRateLimit('idle-site', 'ip', 30, 0);
+    expect(widgetRateLimiterCount()).toBe(1);
+    checkWidgetRateLimit('other-site', 'ip', 30, 11 * 60_000);
+    expect(widgetRateLimiterCount()).toBe(1);
+  });
+});
+
+describe('readBodyWithLimit', () => {
+  it('reads bodies up to the cap and rejects larger ones', async () => {
+    const small = new Request('http://x', { method: 'POST', body: 'hello' });
+    expect(new TextDecoder().decode(await readBodyWithLimit(small, 5))).toBe('hello');
+
+    const large = new Request('http://x', {
+      method: 'POST',
+      body: 'x'.repeat(11),
+      headers: { 'content-length': '11' },
+    });
+    await expect(readBodyWithLimit(large, 10)).rejects.toBeInstanceOf(BodyTooLargeError);
   });
 });

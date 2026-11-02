@@ -53,7 +53,7 @@
       placeholder: '请输入您的问题…',
       send: '发送',
       close: '关闭',
-      handoff: '已为您转接人工客服，客服会在营业时间内尽快联系您。',
+      handoff: '已记录您的转人工请求，客服会在营业时间内查看并尽快回复。',
       error: '网络异常，请稍后重试。',
       empty: '请输入问题后再发送。',
       tooLong: '消息不能超过 {max} 个字符。',
@@ -68,7 +68,7 @@
       placeholder: 'Type your question…',
       send: 'Send',
       close: 'Close',
-      handoff: 'A human agent has been notified and will reply during business hours.',
+      handoff: 'Your request for a human agent has been recorded for our staff, who will review it during business hours.',
       error: 'Network error. Please try again.',
       empty: 'Please type a question first.',
       tooLong: 'Messages can be at most {max} characters.',
@@ -129,8 +129,29 @@
   function ensureVisitorId() {
     var existing = readStorage(VISITOR_KEY);
     if (existing) return existing;
-    var generated =
-      'v-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+    // The visitor id doubles as the credential for resuming a conversation,
+    // so prefer a cryptographically random UUID (never a guessable counter).
+    var generated;
+    try {
+      if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+        generated = 'v-' + window.crypto.randomUUID();
+      }
+    } catch (e) {
+      /* fall through */
+    }
+    if (!generated) {
+      var bytes = '';
+      try {
+        var buffer = new Uint8Array(16);
+        window.crypto.getRandomValues(buffer);
+        for (var i = 0; i < buffer.length; i += 1) {
+          bytes += ('0' + buffer[i].toString(16)).slice(-2);
+        }
+      } catch (e) {
+        bytes = Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+      }
+      generated = 'v-' + bytes;
+    }
     writeStorage(VISITOR_KEY, generated);
     return generated;
   }

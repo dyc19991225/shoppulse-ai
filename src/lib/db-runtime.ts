@@ -8,7 +8,9 @@ let cached: { key: string; db: DB } | null = null;
  * SHOPPULSE_DB_PATH and call resetDbCache().
  */
 export function getDb(): DB {
-  const config = loadConfig();
+  // The database must stay available even when the LLM is misconfigured so
+  // /api/health can report the promised 503 instead of crashing.
+  const config = loadConfig(undefined, { checkLlmReady: false });
   if (!cached || cached.key !== config.dbPath) {
     if (cached) cached.db.close();
     cached = { key: config.dbPath, db: openDb({ dbPath: config.dbPath }) };

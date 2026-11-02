@@ -1,4 +1,8 @@
 import path from 'node:path';
+import { parseBool, type Env } from './env-bool';
+
+export { parseBool };
+export type { Env };
 
 export interface AppConfig {
   dbPath: string;
@@ -18,19 +22,20 @@ export interface AppConfig {
   isProduction: boolean;
 }
 
+export interface LoadConfigOptions {
+  /**
+   * Validate that the LLM is ready (required key present). Defaults to true so
+   * startup/misconfiguration is loud, but core consumers (DB, health probe)
+   * can load the rest of the config without an LLM key.
+   */
+  checkLlmReady?: boolean;
+}
+
 export class ConfigError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'ConfigError';
   }
-}
-
-type Env = Record<string, string | undefined>;
-
-/** Accepts 1/true/yes/on (case-insensitive) as truthy. */
-export function parseBool(value: string | undefined, fallback = false): boolean {
-  if (value === undefined || value.trim() === '') return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
 }
 
 /** Parses a positive integer, falling back when unset; rejects garbage. */
@@ -55,13 +60,16 @@ function nonEmpty(value: string | undefined): string {
  * Builds the app config from environment variables.
  * Never logs or returns key material beyond what the caller needs.
  */
-export function loadConfig(env: Env = process.env): AppConfig {
+export function loadConfig(
+  env: Env = process.env,
+  options: LoadConfigOptions = {},
+): AppConfig {
   const isProduction = env.NODE_ENV === 'production';
 
   const requireLlm = parseBool(env.SHOPPULSE_REQUIRE_LLM, false);
   const apiKey = nonEmpty(env.SHOPPULSE_LLM_API_KEY);
 
-  if (requireLlm && !apiKey) {
+  if (options.checkLlmReady !== false && requireLlm && !apiKey) {
     throw new ConfigError(
       'SHOPPULSE_REQUIRE_LLM is set but SHOPPULSE_LLM_API_KEY is missing',
     );

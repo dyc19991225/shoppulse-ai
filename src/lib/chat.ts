@@ -13,8 +13,13 @@ import {
 } from './db';
 import { detectHandoff } from './handoff';
 import { classifyIntent, type Intent } from './intent';
-import type { LlmProvider } from './llm/types';
-import { applyPriceGuard, collectAllowedPrices } from './price-guard';
+import { LlmError, type LlmProvider } from './llm/types';
+import {
+  collectAllowedPrices,
+  createStreamPriceGuard,
+  priceGuardNotice,
+  type PriceGuardLocale,
+} from './price-guard';
 import { retrieve, type Scored } from './retrieval';
 import { checkRequestSafety } from './safety';
 import type { Locale } from './i18n';
@@ -64,6 +69,8 @@ export interface ChatInput {
 }
 
 export const MAX_MESSAGE_LENGTH = 1000;
+/** Hard cap for the public JSON body, enforced before parsing. */
+export const MAX_CHAT_BODY_BYTES = 16 * 1024;
 export const HISTORY_MESSAGES = 12; // ~6 rounds
 
 export class ChatInputError extends Error {
@@ -114,7 +121,7 @@ export function buildSystemPrompt(
     '3. 不得做虚假宣传，不得使用“最”“第一”“国家级”“100%”“根治”等绝对化或医疗承诺用语。',
     '4. 不回答违法、售假、刷单等请求，礼貌拒绝并引导回正常咨询。',
     '5. 回答简洁友好，中文提问用中文回答，英文提问用英文回答。',
-    '6. 如果用户要求转人工，告知已为其转接人工客服。',
+    '6. 如果用户要求转人工，告知已记录转人工请求，客服会在营业时间内处理；不要声称已通知具体客服或已完成转接。',
     '',
     '【资料】',
     hasResources ? [...kbLines, ...productLines].join('\n') : '（当前暂无可用资料）',
@@ -150,7 +157,13 @@ function conversationHistory(messages: Message[]): { role: 'user' | 'assistant';
     }));
 }
 
-/** Resolves (or creates) the conversation, guarding against site mismatches. */
+/**
+ * Resolves (or creates) the conversation. A supplied id is only resumed when
+ * it belongs to this site AND the caller proves ownership with the same
+ * non-empty visitor id; otherwise a fresh conversation is created. This stops
+ * anyone who learns a public conversation id from reading its history or
+ * appending to it.
+ */
 function resolveConversation(
   db: DB,
   site: Site,
@@ -160,12 +173,10 @@ function resolveConversation(
 ): { conversationId: string; history: Message[] } {
   if (conversationId) {
     const existing = getConversation(db, conversationId);
-    const sameOwner =
-      !existing ||
-      !existing.visitorId ||
-      !visitorId ||
-      existing.visitorId === visitorId;
-    if (existing && existing.siteId === site.id && sameOwner) {
+    const owned =
+      Boolean(existing && existing.visitorId && visitorId) &&
+      existing!.visitorId === visitorId;
+    if (existing && existing.siteId === site.id && owned) {
       return { conversationId: existing.id, history: listMessages(db, existing.id) };
     }
   }
@@ -266,6 +277,11 @@ export async function* runChat(input: ChatInput): AsyncGenerator<ChatEvent, void
     retrieved.products.map(({ item }) => item.price),
   );
 
+  // Stream through an incremental price guard: only the short tail that could
+  // still grow into a currency amount is held back, so unverified prices are
+  // redacted before they reach the browser or the database while the rest of
+  // the answer streams normally.
+  const priceGuard = createStreamPriceGuard(allowedPrices, locale as PriceGuardLocale);
   let answer = '';
   try {
     for await (const chunk of provider.stream({
@@ -275,22 +291,31 @@ export async function* runChat(input: ChatInput): AsyncGenerator<ChatEvent, void
       signal: input.signal,
     })) {
       if (!chunk) continue;
-      answer += chunk;
-      yield { event: 'delta', data: { text: chunk } };
+      const safe = priceGuard.push(chunk);
+      if (!safe.text) continue;
+      answer += safe.text;
+      yield { event: 'delta', data: { text: safe.text } };
     }
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    yield { event: 'error', data: { message: detail } };
+    // Keep provider details (status, upstream body, hostnames) server-side
+    // only; the client gets a fixed code it can render generically.
+    console.warn('[chat] generation failed', {
+      name: error instanceof Error ? error.name : 'unknown',
+      llm: error instanceof LlmError,
+      status: error instanceof LlmError ? error.status : undefined,
+    });
+    yield { event: 'error', data: { message: 'llm_unavailable' } };
     return;
   }
 
-  // Post-check: append a correction notice when the model quoted prices that
-  // are absent from the retrieved context.
-  const guarded = applyPriceGuard(answer, allowedPrices, locale);
-  if (guarded.flagged) {
-    const notice = guarded.text.slice(answer.length);
-    yield { event: 'delta', data: { text: notice } };
-    answer = guarded.text;
+  const tail = priceGuard.flush();
+  if (tail.text) {
+    answer += tail.text;
+    yield { event: 'delta', data: { text: tail.text } };
+  }
+  if (priceGuard.flagged) {
+    answer += priceGuardNotice(locale as PriceGuardLocale);
+    yield { event: 'delta', data: { text: priceGuardNotice(locale as PriceGuardLocale) } };
   }
 
   addMessage(db, {

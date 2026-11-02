@@ -3,7 +3,7 @@ import { openDb } from '../src/lib/db';
 import { seedSampleData } from '../src/lib/seed';
 
 function main(): void {
-  const config = loadConfig();
+  const config = loadConfig(undefined, { checkLlmReady: false });
   const db = openDb({ dbPath: config.dbPath });
   try {
     const result = seedSampleData(db);

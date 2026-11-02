@@ -111,7 +111,45 @@ describe('site helpers', () => {
     const request = new NextRequest('http://internal:3000/api/admin/sites', {
       headers: { host: 'shop-ai.example.com', 'x-forwarded-proto': 'https' },
     });
-    expect(requestBaseUrl(request)).toBe('https://shop-ai.example.com');
+    // Headers are not trusted by default: the server-built URL wins.
+    expect(requestBaseUrl(request)).toBe('http://internal:3000');
+  });
+
+  it('uses SHOPPULSE_PUBLIC_BASE_URL when configured', () => {
+    vi.stubEnv('SHOPPULSE_PUBLIC_BASE_URL', 'https://shop-ai.dycxy.shop/');
+    const request = new NextRequest('http://internal:3000/api/admin/sites', {
+      headers: { host: 'evil.example.com', 'x-forwarded-host': 'evil.example.com' },
+    });
+    expect(requestBaseUrl(request)).toBe('https://shop-ai.dycxy.shop');
+  });
+
+  it('ignores an invalid SHOPPULSE_PUBLIC_BASE_URL', () => {
+    vi.stubEnv('SHOPPULSE_PUBLIC_BASE_URL', 'javascript:alert(1)');
+    expect(requestBaseUrl(new NextRequest('http://internal:3000/api/admin/sites'))).toBe(
+      'http://internal:3000',
+    );
+  });
+
+  it('trusts only the right-most forwarded host behind a trusted proxy', () => {
+    vi.stubEnv('SHOPPULSE_TRUST_PROXY', '1');
+    const request = new NextRequest('http://internal:3000/api/admin/sites', {
+      headers: {
+        'x-forwarded-host': 'evil.example.com, shop-ai.dycxy.shop',
+        'x-forwarded-proto': 'https, https',
+      },
+    });
+    expect(requestBaseUrl(request)).toBe('https://shop-ai.dycxy.shop');
+  });
+
+  it('rejects a malformed forwarded host even behind a trusted proxy', () => {
+    vi.stubEnv('SHOPPULSE_TRUST_PROXY', '1');
+    const request = new NextRequest('http://internal:3000/api/admin/sites', {
+      headers: {
+        'x-forwarded-host': '"><script>alert(1)</script>',
+        'x-forwarded-proto': 'https',
+      },
+    });
+    expect(requestBaseUrl(request)).toBe('http://internal:3000');
   });
 });
 

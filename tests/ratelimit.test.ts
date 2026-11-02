@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RateLimiter, clientIp } from '@/lib/ratelimit';
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 function fakeClock() {
   let now = 0;
@@ -55,15 +59,41 @@ describe('RateLimiter', () => {
 });
 
 describe('clientIp', () => {
-  it('prefers the first x-forwarded-for entry', () => {
+  it('ignores X-Forwarded-For and X-Real-IP when no proxy is trusted', () => {
     const request = new Request('http://x', {
       headers: { 'x-forwarded-for': '1.2.3.4, 5.6.7.8', 'x-real-ip': '9.9.9.9' },
     });
-    expect(clientIp(request)).toBe('1.2.3.4');
+    // Client-supplied headers must not be able to rotate the rate-limit key.
+    expect(clientIp(request)).toBe('unknown');
   });
 
-  it('falls back to x-real-ip then unknown', () => {
-    expect(clientIp(new Request('http://x', { headers: { 'x-real-ip': '9.9.9.9' } }))).toBe('9.9.9.9');
+  it('uses the server-controlled request address when available', () => {
+    const request = new Request('http://x', { headers: { 'x-forwarded-for': '1.2.3.4' } });
+    Object.defineProperty(request, 'ip', { value: '203.0.113.50' });
+    expect(clientIp(request)).toBe('203.0.113.50');
+  });
+
+  it('uses the right-most X-Forwarded-For hop when the proxy is trusted', () => {
+    vi.stubEnv('SHOPPULSE_TRUST_PROXY', '1');
+    const request = new Request('http://x', {
+      headers: { 'x-forwarded-for': '6.6.6.6, 198.51.100.7' },
+    });
+    // The client-controlled left hop is ignored; Caddy appended the right one.
+    expect(clientIp(request)).toBe('198.51.100.7');
+  });
+
+  it('accepts truthy spellings for SHOPPULSE_TRUST_PROXY', () => {
+    for (const value of ['1', 'true', 'yes', 'on']) {
+      vi.stubEnv('SHOPPULSE_TRUST_PROXY', value);
+      const request = new Request('http://x', {
+        headers: { 'x-forwarded-for': '6.6.6.6, 198.51.100.7' },
+      });
+      expect(clientIp(request), value).toBe('198.51.100.7');
+    }
+  });
+
+  it('falls back to unknown for a trusted proxy with no forwarding header', () => {
+    vi.stubEnv('SHOPPULSE_TRUST_PROXY', '1');
     expect(clientIp(new Request('http://x'))).toBe('unknown');
   });
 });
