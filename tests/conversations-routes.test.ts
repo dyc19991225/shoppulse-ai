@@ -12,6 +12,7 @@ import {
 } from '@/lib/db';
 import { resetDbCache } from '@/lib/db-runtime';
 import { createTempDb, type TempDb } from './helpers/tempdb';
+import { adminSessionCookie, TEST_SESSION_SECRET } from './helpers/auth';
 
 let temp: TempDb | undefined;
 
@@ -19,6 +20,7 @@ beforeEach(() => {
   temp = createTempDb();
   vi.stubEnv('SHOPPULSE_DB_PATH', temp.path);
   vi.stubEnv('NODE_ENV', 'test');
+  vi.stubEnv('SESSION_SECRET', TEST_SESSION_SECRET);
   resetDbCache();
 });
 
@@ -35,6 +37,12 @@ function db(): DB {
 
 function params(id: string) {
   return { params: { id } };
+}
+
+function getRequest(url: string): NextRequest {
+  return new NextRequest(`http://localhost${url}`, {
+    headers: { cookie: adminSessionCookie() },
+  });
 }
 
 function seedConversations() {
@@ -64,7 +72,7 @@ function updateHandled(id: string, handled: boolean) {
 describe('GET /api/admin/conversations', () => {
   it('lists conversations with site name and message count', async () => {
     seedConversations();
-    const response = listRoute(new NextRequest('http://localhost/api/admin/conversations'));
+    const response = await listRoute(getRequest('/api/admin/conversations'));
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.total).toBe(2);
@@ -82,38 +90,38 @@ describe('GET /api/admin/conversations', () => {
   it('filters by site, handled and needs-human', async () => {
     const { second } = seedConversations();
 
-    const bySite = await listRoute(
-      new NextRequest(`http://localhost/api/admin/conversations?siteId=${second.id}`),
+    const bySite = await (
+      await listRoute(getRequest(`/api/admin/conversations?siteId=${second.id}`))
     ).json();
     expect(bySite.total).toBe(1);
     expect(bySite.items[0].id).toBe('c2');
 
-    const handled = await listRoute(
-      new NextRequest('http://localhost/api/admin/conversations?handled=true'),
+    const handled = await (
+      await listRoute(getRequest('/api/admin/conversations?handled=true'))
     ).json();
     expect(handled.items.map((item: { id: string }) => item.id)).toEqual(['c2']);
 
-    const unhandled = await listRoute(
-      new NextRequest('http://localhost/api/admin/conversations?handled=false'),
+    const unhandled = await (
+      await listRoute(getRequest('/api/admin/conversations?handled=false'))
     ).json();
     expect(unhandled.items.map((item: { id: string }) => item.id)).toEqual(['c1']);
 
-    const needsHuman = await listRoute(
-      new NextRequest('http://localhost/api/admin/conversations?needsHuman=true'),
+    const needsHuman = await (
+      await listRoute(getRequest('/api/admin/conversations?needsHuman=true'))
     ).json();
     expect(needsHuman.items.map((item: { id: string }) => item.id)).toEqual(['c2']);
   });
 
   it('paginates', async () => {
     seedConversations();
-    const first = await listRoute(
-      new NextRequest('http://localhost/api/admin/conversations?limit=1&offset=0'),
+    const first = await (
+      await listRoute(getRequest('/api/admin/conversations?limit=1&offset=0'))
     ).json();
     expect(first.items).toHaveLength(1);
     expect(first.total).toBe(2);
 
-    const second = await listRoute(
-      new NextRequest('http://localhost/api/admin/conversations?limit=1&offset=1'),
+    const second = await (
+      await listRoute(getRequest('/api/admin/conversations?limit=1&offset=1'))
     ).json();
     expect(second.items).toHaveLength(1);
     expect(second.items[0].id).not.toBe(first.items[0].id);
@@ -128,7 +136,7 @@ describe('GET /api/admin/conversations', () => {
       'limit=201',
       'offset=-1',
     ]) {
-      const response = listRoute(new NextRequest(`http://localhost/api/admin/conversations?${query}`));
+      const response = await listRoute(getRequest(`/api/admin/conversations?${query}`));
       expect(response.status, query).toBe(400);
     }
   });
@@ -137,7 +145,7 @@ describe('GET /api/admin/conversations', () => {
 describe('conversation detail API', () => {
   it('returns metadata and the transcript in order', async () => {
     seedConversations();
-    const response = detailRoute(new NextRequest('http://localhost'), params('c1'));
+    const response = await detailRoute(getRequest('/'), params('c1'));
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.item).toMatchObject({ id: 'c1', siteName: '默认站点', messageCount: 2 });
@@ -145,8 +153,8 @@ describe('conversation detail API', () => {
     expect(body.messages[1].content).toContain('29.90');
   });
 
-  it('404s for unknown conversations', () => {
-    expect(detailRoute(new NextRequest('http://localhost'), params('missing')).status).toBe(404);
+  it('404s for unknown conversations', async () => {
+    expect((await detailRoute(getRequest('/'), params('missing'))).status).toBe(404);
   });
 
   it('marks handled and unhandled', async () => {
@@ -155,28 +163,28 @@ describe('conversation detail API', () => {
     const handled = await updateRoute(
       new NextRequest('http://localhost', {
         method: 'PUT',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', cookie: adminSessionCookie() },
         body: JSON.stringify({ handled: true }),
       }),
       params('c1'),
     );
     expect(handled.status).toBe(200);
     expect(await handled.json()).toEqual({ ok: true, handled: true });
-    expect(detailRoute(new NextRequest('http://localhost'), params('c1'))).toBeDefined();
+    expect(await detailRoute(getRequest('/'), params('c1'))).toBeDefined();
 
-    const detail = await detailRoute(new NextRequest('http://localhost'), params('c1')).json();
+    const detail = await (await detailRoute(getRequest('/'), params('c1'))).json();
     expect(detail.item.handled).toBe(true);
 
     const unhandled = await updateRoute(
       new NextRequest('http://localhost', {
         method: 'PUT',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', cookie: adminSessionCookie() },
         body: JSON.stringify({ handled: false }),
       }),
       params('c1'),
     );
     expect(unhandled.status).toBe(200);
-    const after = await detailRoute(new NextRequest('http://localhost'), params('c1')).json();
+    const after = await (await detailRoute(getRequest('/'), params('c1'))).json();
     expect(after.item.handled).toBe(false);
   });
 
@@ -185,7 +193,11 @@ describe('conversation detail API', () => {
     const badBodies = ['{nope', JSON.stringify({ handled: 'yes' }), JSON.stringify({})];
     for (const body of badBodies) {
       const response = await updateRoute(
-        new NextRequest('http://localhost', { method: 'PUT', body }),
+        new NextRequest('http://localhost', {
+          method: 'PUT',
+          headers: { cookie: adminSessionCookie() },
+          body,
+        }),
         params('c1'),
       );
       expect(response.status, body).toBe(400);
@@ -194,7 +206,7 @@ describe('conversation detail API', () => {
     const missing = await updateRoute(
       new NextRequest('http://localhost', {
         method: 'PUT',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', cookie: adminSessionCookie() },
         body: JSON.stringify({ handled: true }),
       }),
       params('missing'),

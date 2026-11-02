@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { loadConfig } from '@/lib/config';
-import { SESSION_COOKIE, verifySession } from '@/lib/auth/session';
+import { getCurrentUser } from '@/lib/auth';
+import { SESSION_COOKIE } from '@/lib/auth/session';
 import { getRequestLocale, getRequestTranslator } from '@/lib/i18n/server';
 import { AdminSidebar } from '@/components/admin/sidebar';
 
@@ -9,17 +9,15 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Admin shell. Middleware already rejects unauthenticated requests, but we
- * re-verify here so a misconfigured matcher can never leak admin pages.
+ * re-verify here — against the users table — so a misconfigured matcher or a
+ * disabled/reset account can never use a stale cookie to reach admin pages.
  */
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   let username = '';
   try {
-    const secret = loadConfig(undefined, { checkLlmReady: false }).sessionSecret;
-    const session = secret
-      ? await verifySession(cookies().get(SESSION_COOKIE)?.value, secret)
-      : { valid: false as const, reason: 'malformed' as const };
-    if (!session.valid) redirect('/login?next=/admin');
-    username = session.payload.sub;
+    const user = await getCurrentUser(cookies().get(SESSION_COOKIE)?.value);
+    if (!user) redirect('/login?next=/admin');
+    username = user.username;
   } catch (error) {
     // redirect() throws; rethrow so Next handles it.
     if (error && typeof error === 'object' && 'digest' in error) throw error;

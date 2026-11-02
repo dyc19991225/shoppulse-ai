@@ -15,6 +15,7 @@ import { createProvider, LlmError } from '@/lib/llm';
 import { loadConfig } from '@/lib/config';
 import { asString, jsonError, parseId, readJsonObject } from '@/lib/api';
 import { isLocale, type Locale } from '@/lib/i18n';
+import { requireAdminApi } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -24,7 +25,10 @@ const MAX_SELLING_POINTS = 10;
 const MAX_SELLING_POINT_LENGTH = 200;
 
 /** Recent generation history for the copy studio sidebar. */
-export function GET(request: NextRequest): NextResponse {
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  const auth = await requireAdminApi(request);
+  if (auth instanceof NextResponse) return auth;
+
   const limitParam = Number(request.nextUrl.searchParams.get('limit') ?? '20');
   const limit = Number.isFinite(limitParam) ? Math.min(Math.max(Math.floor(limitParam), 1), 100) : 20;
   const items = listCopyHistory(getDb(), { limit });
@@ -49,6 +53,9 @@ function parseSellingPoints(value: unknown): string[] | null {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  const auth = await requireAdminApi(request);
+  if (auth instanceof NextResponse) return auth;
+
   const parsed = await readJsonObject(request);
   if (!parsed.ok) return parsed.response;
   const body = parsed.body;

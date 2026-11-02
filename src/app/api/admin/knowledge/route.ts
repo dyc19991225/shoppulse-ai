@@ -8,10 +8,14 @@ import {
 } from '@/lib/db';
 import { getDb } from '@/lib/db-runtime';
 import { asBoolean, asOptionalString, asString, jsonError, readJsonObject } from '@/lib/api';
+import { requireAdminApi } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
-export function GET(request: NextRequest): NextResponse {
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  const auth = await requireAdminApi(request);
+  if (auth instanceof NextResponse) return auth;
+
   const db = getDb();
   const search = request.nextUrl.searchParams.get('search')?.trim() || undefined;
   const entries = listKbEntries(db, { search });
@@ -19,6 +23,9 @@ export function GET(request: NextRequest): NextResponse {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  const auth = await requireAdminApi(request);
+  if (auth instanceof NextResponse) return auth;
+
   const parsed = await readJsonObject(request);
   if (!parsed.ok) return parsed.response;
   const body = parsed.body;

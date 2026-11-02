@@ -19,6 +19,7 @@ import {
 import { resetDbCache } from '@/lib/db-runtime';
 import { GET as statsRoute } from '@/app/api/admin/stats/route';
 import { createTempDb, type TempDb } from './helpers/tempdb';
+import { adminSessionCookie, TEST_SESSION_SECRET } from './helpers/auth';
 
 let temp: TempDb | undefined;
 
@@ -26,6 +27,7 @@ beforeEach(() => {
   temp = createTempDb();
   vi.stubEnv('SHOPPULSE_DB_PATH', temp.path);
   vi.stubEnv('NODE_ENV', 'test');
+  vi.stubEnv('SESSION_SECRET', TEST_SESSION_SECRET);
   resetDbCache();
 });
 
@@ -164,10 +166,16 @@ describe('topQuestionTerms', () => {
   });
 });
 
+function statsRequest(url: string): NextRequest {
+  return new NextRequest(`http://localhost${url}`, {
+    headers: { cookie: adminSessionCookie() },
+  });
+}
+
 describe('GET /api/admin/stats', () => {
   it('returns the stats payload', async () => {
     seed();
-    const response = statsRoute(new NextRequest('http://localhost/api/admin/stats'));
+    const response = await statsRoute(statsRequest('/api/admin/stats'));
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.last7Days.conversations).toBe(5);
@@ -176,13 +184,13 @@ describe('GET /api/admin/stats', () => {
   });
 
   it('accepts a days parameter and rejects invalid ones', async () => {
-    const ok = statsRoute(new NextRequest('http://localhost/api/admin/stats?days=30'));
+    const ok = await statsRoute(statsRequest('/api/admin/stats?days=30'));
     expect(ok.status).toBe(200);
     expect((await ok.json()).rangeDays).toBe(30);
 
     for (const query of ['days=0', 'days=abc', 'days=366', 'days=-1']) {
       expect(
-        statsRoute(new NextRequest(`http://localhost/api/admin/stats?${query}`)).status,
+        (await statsRoute(statsRequest(`/api/admin/stats?${query}`))).status,
         query,
       ).toBe(400);
     }

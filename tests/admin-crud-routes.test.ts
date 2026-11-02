@@ -15,6 +15,7 @@ import { POST as importProductsRoute } from '@/app/api/admin/products/import/rou
 import { GET as downloadTemplate } from '@/app/api/admin/products/template/route';
 import { resetDbCache } from '@/lib/db-runtime';
 import { createTempDb, type TempDb } from './helpers/tempdb';
+import { adminSessionCookie, TEST_SESSION_SECRET } from './helpers/auth';
 
 let temp: TempDb | undefined;
 
@@ -22,6 +23,7 @@ beforeEach(() => {
   temp = createTempDb();
   vi.stubEnv('SHOPPULSE_DB_PATH', temp.path);
   vi.stubEnv('NODE_ENV', 'test');
+  vi.stubEnv('SESSION_SECRET', TEST_SESSION_SECRET);
   resetDbCache();
 });
 
@@ -35,8 +37,15 @@ afterEach(() => {
 function jsonRequest(url: string, method: string, body?: unknown): NextRequest {
   return new NextRequest(`http://localhost${url}`, {
     method,
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', cookie: adminSessionCookie() },
     body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
+/** GET with the admin session cookie attached. */
+function getRequest(url: string): NextRequest {
+  return new NextRequest(`http://localhost${url}`, {
+    headers: { cookie: adminSessionCookie() },
   });
 }
 
@@ -58,7 +67,7 @@ describe('knowledge admin API', () => {
     const entry = (await created.json()).item;
     expect(entry).toMatchObject({ type: 'policy', title: '退换货政策', enabled: true });
 
-    const list = await listKb(new NextRequest('http://localhost/api/admin/knowledge'));
+    const list = await listKb(getRequest('/api/admin/knowledge'));
     expect((await list.json()).total).toBe(1);
 
     const updated = await updateKb(
@@ -68,12 +77,12 @@ describe('knowledge admin API', () => {
     expect(updated.status).toBe(200);
     expect((await updated.json()).item).toMatchObject({ title: '新标题', enabled: false });
 
-    const fetched = await getKb(new NextRequest('http://localhost'), idParams(entry.id));
+    const fetched = await getKb(getRequest('/'), idParams(entry.id));
     expect(fetched.status).toBe(200);
 
-    const deleted = await deleteKb(new NextRequest('http://localhost'), idParams(entry.id));
+    const deleted = await deleteKb(getRequest('/'), idParams(entry.id));
     expect(deleted.status).toBe(200);
-    expect((await deleteKb(new NextRequest('http://localhost'), idParams(entry.id))).status).toBe(404);
+    expect((await deleteKb(getRequest('/'), idParams(entry.id))).status).toBe(404);
   });
 
   it('validates payloads', async () => {
@@ -90,7 +99,7 @@ describe('knowledge admin API', () => {
     const badJson = await createKb(jsonRequest('/api/admin/knowledge', 'POST', undefined));
     expect(badJson.status).toBe(400);
 
-    const badId = await updateKb(new NextRequest('http://localhost'), idParams('abc'));
+    const badId = await updateKb(getRequest('/'), idParams('abc'));
     expect(badId.status).toBe(400);
   });
 
@@ -98,7 +107,7 @@ describe('knowledge admin API', () => {
     await createKb(jsonRequest('/api/admin/knowledge', 'POST', { title: '物流说明', content: '包邮' }));
     await createKb(jsonRequest('/api/admin/knowledge', 'POST', { title: '支付说明', content: '微信' }));
 
-    const res = await listKb(new NextRequest('http://localhost/api/admin/knowledge?search=物流'));
+    const res = await listKb(getRequest('/api/admin/knowledge?search=物流'));
     const body = await res.json();
     expect(body.total).toBe(1);
     expect(body.items[0].title).toBe('物流说明');
@@ -126,10 +135,10 @@ describe('products admin API', () => {
     );
     expect((await updated.json()).item).toMatchObject({ price: 19.9, enabled: false });
 
-    const list = await listProducts(new NextRequest('http://localhost/api/admin/products'));
+    const list = await listProducts(getRequest('/api/admin/products'));
     expect((await list.json()).total).toBe(1);
 
-    expect((await deleteProduct(new NextRequest('http://localhost'), idParams(product.id))).status).toBe(200);
+    expect((await deleteProduct(getRequest('/'), idParams(product.id))).status).toBe(200);
   });
 
   it('rejects duplicate SKUs and unsafe URLs', async () => {
@@ -165,7 +174,7 @@ describe('products admin API', () => {
   it('filters products by search', async () => {
     await createProduct(jsonRequest('/api/admin/products', 'POST', { name: '苹果', category: '水果' }));
     await createProduct(jsonRequest('/api/admin/products', 'POST', { name: '香蕉', category: '水果' }));
-    const res = await listProducts(new NextRequest('http://localhost/api/admin/products?search=苹果'));
+    const res = await listProducts(getRequest('/api/admin/products?search=苹果'));
     expect((await res.json()).total).toBe(1);
   });
 });
@@ -176,6 +185,7 @@ describe('product import API', () => {
     form.append('file', new File([content], filename, { type: 'text/csv' }));
     return new NextRequest('http://localhost/api/admin/products/import', {
       method: 'POST',
+      headers: { cookie: adminSessionCookie() },
       body: form,
     });
   }
@@ -195,7 +205,11 @@ describe('product import API', () => {
 
     const form = new FormData();
     const noFile = await importProductsRoute(
-      new NextRequest('http://localhost/api/admin/products/import', { method: 'POST', body: form }),
+      new NextRequest('http://localhost/api/admin/products/import', {
+        method: 'POST',
+        headers: { cookie: adminSessionCookie() },
+        body: form,
+      }),
     );
     expect(noFile.status).toBe(400);
   });
@@ -218,7 +232,7 @@ describe('product import API', () => {
     });
     const request = new NextRequest('http://localhost/api/admin/products/import', {
       method: 'POST',
-      headers: { 'content-type': contentType },
+      headers: { 'content-type': contentType, cookie: adminSessionCookie() },
       body,
       ...({ duplex: 'half' } as { duplex?: 'half' }),
     });
@@ -230,7 +244,7 @@ describe('product import API', () => {
   });
 
   it('serves the CSV template', async () => {
-    const res = downloadTemplate();
+    const res = await downloadTemplate(getRequest('/api/admin/products/template'));
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/csv');
     expect(res.headers.get('content-disposition')).toContain('attachment');

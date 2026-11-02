@@ -3,11 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { POST as loginPost } from '@/app/api/auth/login/route';
 import { POST as logoutPost } from '@/app/api/auth/logout/route';
 import { hashPasswordSync, signSession } from '@/lib/auth';
+import { resetDbCache } from '@/lib/db-runtime';
 import { resetLoginLimiter } from '@/lib/ratelimit';
+import { createTempDb, type TempDb } from './helpers/tempdb';
 
 const PASSWORD = 'test-password-123';
 const HASH = hashPasswordSync(PASSWORD);
 const SECRET = 'test-session-secret';
+
+let temp: TempDb | undefined;
 
 function loginRequest(body: unknown, ip = '10.0.0.1'): NextRequest {
   return new NextRequest('http://localhost/api/auth/login', {
@@ -18,7 +22,10 @@ function loginRequest(body: unknown, ip = '10.0.0.1'): NextRequest {
 }
 
 beforeEach(() => {
+  temp = createTempDb();
+  resetDbCache();
   resetLoginLimiter();
+  vi.stubEnv('SHOPPULSE_DB_PATH', temp.path);
   vi.stubEnv('ADMIN_USERNAME', 'admin');
   vi.stubEnv('ADMIN_PASSWORD_HASH', HASH);
   vi.stubEnv('ADMIN_PASSWORD', '');
@@ -32,6 +39,9 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllEnvs();
   resetLoginLimiter();
+  resetDbCache();
+  temp?.cleanup();
+  temp = undefined;
 });
 
 describe('POST /api/auth/login', () => {

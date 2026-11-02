@@ -22,6 +22,7 @@ import {
   getProduct,
   getProductBySku,
   getSiteByKey,
+  getUserById,
   listConversations,
   listCopyHistory,
   listKbEntries,
@@ -57,11 +58,17 @@ describe('migrations & default site', () => {
       .all()
       .map((row) => (row as { name: string }).name);
 
-    for (const table of ['kb_entries', 'products', 'sites', 'conversations', 'messages', 'copy_history']) {
+    for (const table of ['users', 'kb_entries', 'products', 'sites', 'conversations', 'messages', 'copy_history']) {
       expect(tables).toContain(table);
     }
 
-    expect(db.pragma('user_version', { simple: true })).toBe(1);
+    expect(db.pragma('user_version', { simple: true })).toBe(2);
+    expect(getUserById(db, 1)).toMatchObject({
+      username: 'admin',
+      role: 'admin',
+      disabled: false,
+      sessionVersion: 0,
+    });
     const site = getSiteByKey(db, DEFAULT_SITE_KEY);
     expect(site).not.toBeNull();
     expect(site!.name).toBe('默认站点');
@@ -76,7 +83,7 @@ describe('migrations & default site', () => {
       first.close();
 
       const second = openDb({ dbPath });
-      expect(second.pragma('user_version', { simple: true })).toBe(1);
+      expect(second.pragma('user_version', { simple: true })).toBe(2);
       expect(listSites(second)).toHaveLength(1);
       ensureDefaultSite(second);
       expect(listSites(second)).toHaveLength(1);

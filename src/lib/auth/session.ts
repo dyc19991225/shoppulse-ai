@@ -11,6 +11,10 @@ export const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
 export interface SessionPayload {
   /** Username. */
   sub: string;
+  /** User id (schema v2 sessions; absent on legacy tokens). */
+  uid: number;
+  /** session_version at issue time (schema v2 sessions). */
+  ver: number;
   /** Issued at (epoch seconds). */
   iat: number;
   /** Expires at (epoch seconds). */
@@ -45,13 +49,19 @@ async function importKey(secret: string): Promise<CryptoKey> {
 export async function signSession(
   subject: string,
   secret: string,
-  options: { now?: number; ttlSeconds?: number } = {},
+  options: { now?: number; ttlSeconds?: number; uid?: number; ver?: number } = {},
 ): Promise<string> {
   if (!secret) throw new Error('Session secret is required');
   const now = options.now ?? Math.floor(Date.now() / 1000);
   const ttl = options.ttlSeconds ?? SESSION_TTL_SECONDS;
 
-  const payload: SessionPayload = { sub: subject, iat: now, exp: now + ttl };
+  const payload: SessionPayload = {
+    sub: subject,
+    uid: options.uid ?? 0,
+    ver: options.ver ?? 0,
+    iat: now,
+    exp: now + ttl,
+  };
   const payloadPart = base64UrlEncode(new TextEncoder().encode(JSON.stringify(payload)));
   const key = await importKey(secret);
   const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payloadPart));
@@ -92,6 +102,9 @@ export async function verifySession(
   );
   if (!ok) return { valid: false, reason: 'bad_signature' };
 
+  // Only the signature/expiry are checked here; uid/ver are compared against
+  // the database by resolveSessionUser() in the Node runtime. Middleware runs
+  // on the Edge and must stay free of DB access.
   let payload: SessionPayload;
   try {
     const decoded = JSON.parse(new TextDecoder().decode(base64UrlDecode(payloadPart)));

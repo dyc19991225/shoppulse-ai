@@ -22,6 +22,7 @@ import { resetDbCache } from '@/lib/db-runtime';
 import { resetProviderCache } from '@/lib/llm';
 import { GET as historyGet, POST as copywritePost } from '@/app/api/admin/copywrite/route';
 import { createTempDb, type TempDb } from './helpers/tempdb';
+import { adminSessionCookie, TEST_SESSION_SECRET } from './helpers/auth';
 
 let temp: TempDb | undefined;
 
@@ -29,6 +30,7 @@ beforeEach(() => {
   temp = createTempDb();
   vi.stubEnv('SHOPPULSE_DB_PATH', temp.path);
   vi.stubEnv('NODE_ENV', 'test');
+  vi.stubEnv('SESSION_SECRET', TEST_SESSION_SECRET);
   vi.stubEnv('SHOPPULSE_LLM_API_KEY', '');
   resetDbCache();
   resetProviderCache();
@@ -62,8 +64,14 @@ function sampleProduct(name = '青禾竹纤维洗碗巾') {
 function jsonRequest(url: string, body: unknown): NextRequest {
   return new NextRequest(`http://localhost${url}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', cookie: adminSessionCookie() },
     body: JSON.stringify(body),
+  });
+}
+
+function getRequest(url: string): NextRequest {
+  return new NextRequest(`http://localhost${url}`, {
+    headers: { cookie: adminSessionCookie() },
   });
 }
 
@@ -671,7 +679,7 @@ describe('/api/admin/copywrite route', () => {
     expect(body.outputs[0]).toMatchObject({ platform: 'xiaohongshu', blocked: false });
     expect(typeof body.historyId).toBe('string');
 
-    const history = await historyGet(new NextRequest('http://localhost/api/admin/copywrite'));
+    const history = await historyGet(getRequest('/api/admin/copywrite'));
     const historyBody = await history.json();
     expect(historyBody.total).toBe(1);
     expect(historyBody.items[0].outputs.items).toHaveLength(2);
@@ -708,7 +716,7 @@ describe('/api/admin/copywrite route', () => {
     const badJson = await copywritePost(
       new NextRequest('http://localhost/api/admin/copywrite', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', cookie: adminSessionCookie() },
         body: '{nope',
       }),
     );

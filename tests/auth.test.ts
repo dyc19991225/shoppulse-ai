@@ -60,6 +60,44 @@ describe('sessions', () => {
     }
   });
 
+  it('carries uid and session version in v2 sessions', async () => {
+    const token = await signSession('friend', secret, { uid: 7, ver: 3 });
+    const result = await verifySession(token, secret);
+
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.payload).toMatchObject({ sub: 'friend', uid: 7, ver: 3 });
+    }
+  });
+
+  it('still verifies legacy payloads at the signature layer (DB check rejects them)', async () => {
+    // Pre-v2 tokens have no uid/ver; middleware accepts them by design and
+    // resolveSessionUser() is what turns them away.
+    const legacyPayload = Buffer.from(
+      JSON.stringify({ sub: 'admin', iat: 1_000, exp: 4_000_000_000 }),
+    ).toString('base64url');
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    );
+    const signature = await crypto.subtle.sign(
+      'HMAC',
+      key,
+      new TextEncoder().encode(legacyPayload),
+    );
+    const token = `${legacyPayload}.${Buffer.from(signature).toString('base64url')}`;
+
+    const result = await verifySession(token, secret);
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.payload.uid).toBeUndefined();
+      expect(result.payload.ver).toBeUndefined();
+    }
+  });
+
   it('rejects an expired session', async () => {
     const token = await signSession('admin', secret, { now: 1_000, ttlSeconds: 10 });
     const result = await verifySession(token, secret, { now: 1_011 });

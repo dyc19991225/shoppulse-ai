@@ -1,15 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
+import type { AppConfig } from './config';
 
 export type DB = Database.Database;
 type Row = Record<string, unknown>;
 
-const SCHEMA_VERSION = 1;
-
-const MIGRATIONS: string[] = [
-  // v1
-  `
+/** v1 schema. Exported so migration tests can build a pre-upgrade database. */
+export const V1_SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS kb_entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     type TEXT NOT NULL DEFAULT 'faq',
@@ -78,8 +76,66 @@ const MIGRATIONS: string[] = [
   CREATE INDEX IF NOT EXISTS idx_products_enabled ON products(enabled);
   CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at);
   CREATE INDEX IF NOT EXISTS idx_conversations_site ON conversations(site_id, started_at);
-  `,
-];
+`;
+
+/**
+ * v2 adds users and per-owner scoping. Existing rows belong to user 1 (the
+ * bootstrap admin). products is rebuilt because SQLite cannot drop the old
+ * global UNIQUE(sku) constraint; foreign keys are disabled around the rebuild
+ * so copy_history rows keep pointing at the same product ids.
+ */
+const MIGRATION_V2_SQL = `
+  CREATE TABLE users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    password_hash TEXT NOT NULL DEFAULT '',
+    role TEXT NOT NULL CHECK(role IN ('admin','user')) DEFAULT 'user',
+    disabled INTEGER NOT NULL DEFAULT 0,
+    session_version INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+
+  INSERT INTO users (id, username, password_hash, role, disabled, session_version, created_at)
+  VALUES (1, 'admin', '', 'admin', 0, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+
+  ALTER TABLE kb_entries ADD COLUMN owner_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id);
+  ALTER TABLE copy_history ADD COLUMN owner_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id);
+  ALTER TABLE sites ADD COLUMN owner_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id);
+
+  CREATE TABLE products_v2 (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id),
+    sku TEXT,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT '',
+    price REAL NOT NULL DEFAULT 0,
+    stock INTEGER NOT NULL DEFAULT 0,
+    description TEXT NOT NULL DEFAULT '',
+    selling_points TEXT NOT NULL DEFAULT '',
+    image_url TEXT NOT NULL DEFAULT '',
+    url TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(owner_id, sku)
+  );
+  INSERT INTO products_v2
+    (id, owner_id, sku, name, category, price, stock, description, selling_points,
+     image_url, url, enabled, created_at, updated_at)
+  SELECT id, 1, sku, name, category, price, stock, description, selling_points,
+         image_url, url, enabled, created_at, updated_at
+  FROM products;
+  DROP TABLE products;
+  ALTER TABLE products_v2 RENAME TO products;
+
+  CREATE INDEX idx_kb_owner ON kb_entries(owner_id);
+  CREATE INDEX idx_products_owner ON products(owner_id);
+  CREATE INDEX idx_products_enabled ON products(enabled);
+  CREATE INDEX idx_copy_history_owner ON copy_history(owner_id);
+  CREATE INDEX idx_sites_owner ON sites(owner_id);
+`;
+
+const MIGRATIONS: string[] = [V1_SCHEMA_SQL, MIGRATION_V2_SQL];
 
 export interface OpenDbOptions {
   /** SQLite path; `:memory:` is supported. Defaults to env SHOPPULSE_DB_PATH. */
@@ -115,12 +171,29 @@ export function openDb(dbPathOrOptions: string | OpenDbOptions = {}): DB {
 
 export function migrate(db: DB): void {
   const current = db.pragma('user_version', { simple: true }) as number;
-  for (let version = current; version < MIGRATIONS.length; version += 1) {
-    const run = db.transaction(() => {
-      db.exec(MIGRATIONS[version]);
-      db.pragma(`user_version = ${version + 1}`);
-    });
-    run();
+  if (current >= MIGRATIONS.length) return;
+
+  // SQLite refuses a REFERENCES column with a non-NULL default while foreign
+  // keys are enforced, and dropping/renaming the referenced products table
+  // would fire ON DELETE SET NULL on copy_history. Both must be done with
+  // enforcement off; integrity is checked before turning it back on.
+  const enforceForeignKeys = db.pragma('foreign_keys', { simple: true }) === 1;
+  if (enforceForeignKeys) db.pragma('foreign_keys = OFF');
+
+  try {
+    for (let version = current; version < MIGRATIONS.length; version += 1) {
+      const run = db.transaction(() => {
+        db.exec(MIGRATIONS[version]);
+        const violations = db.pragma('foreign_key_check') as unknown[];
+        if (violations.length > 0) {
+          throw new Error(`Migration v${version + 1} left foreign key violations`);
+        }
+        db.pragma(`user_version = ${version + 1}`);
+      });
+      run();
+    }
+  } finally {
+    if (enforceForeignKeys) db.pragma('foreign_keys = ON');
   }
 }
 
@@ -155,6 +228,76 @@ export function ensureDefaultSite(db: DB): number {
 
 export function nowIso(): string {
   return new Date().toISOString();
+}
+
+// ---------------------------------------------------------------------------
+// Users repository (schema v2)
+// ---------------------------------------------------------------------------
+
+/** Id of the bootstrap admin created by migration v2; it owns all v1 data. */
+export const BOOTSTRAP_ADMIN_ID = 1;
+
+export type UserRole = 'admin' | 'user';
+
+/** Public user shape; password hashes never leave the repository layer. */
+export interface User {
+  id: number;
+  username: string;
+  role: UserRole;
+  disabled: boolean;
+  sessionVersion: number;
+  createdAt: string;
+}
+
+export interface UserWithPassword extends User {
+  /** scrypt `salt:hash`; '' when only the env admin hash applies. */
+  passwordHash: string;
+}
+
+function mapUser(row: Row): UserWithPassword {
+  return {
+    id: Number(row.id),
+    username: String(row.username),
+    passwordHash: String(row.password_hash),
+    role: row.role === 'admin' ? 'admin' : 'user',
+    disabled: bool(row.disabled),
+    sessionVersion: Number(row.session_version),
+    createdAt: String(row.created_at),
+  };
+}
+
+/** Looks a user up by username, case-insensitively. */
+export function getUserByUsername(db: DB, username: string): UserWithPassword | null {
+  const row = db
+    .prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE')
+    .get(username) as Row | undefined;
+  return row ? mapUser(row) : null;
+}
+
+export function getUserById(db: DB, id: number): UserWithPassword | null {
+  const row = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as Row | undefined;
+  return row ? mapUser(row) : null;
+}
+
+/**
+ * Keeps user 1 (the bootstrap admin, owner of all pre-v2 data) aligned with
+ * the env admin so existing deployments keep the same login name. Renames only
+ * while user 1 has no password of its own, and never takes a username another
+ * account already uses. The env hash is never copied: login reads it live, so
+ * rotating ADMIN_PASSWORD_HASH keeps working.
+ */
+export function ensureEnvAdmin(
+  db: DB,
+  config: Pick<AppConfig, 'admin'>,
+): UserWithPassword | null {
+  const username = config.admin.username.trim();
+  const admin = getUserById(db, BOOTSTRAP_ADMIN_ID);
+  if (!admin || !username || admin.username === username) return admin;
+  if (admin.passwordHash !== '') return admin;
+  if (getUserByUsername(db, username)) return admin;
+
+  db.prepare('UPDATE users SET username = ? WHERE id = ?').run(username, BOOTSTRAP_ADMIN_ID);
+  return getUserById(db, BOOTSTRAP_ADMIN_ID);
 }
 
 // ---------------------------------------------------------------------------
@@ -804,4 +947,4 @@ export function getCopyHistory(db: DB, id: string): CopyHistoryEntry | null {
   return row ? mapCopyHistory(row) : null;
 }
 
-export { SCHEMA_VERSION };
+export const SCHEMA_VERSION = MIGRATIONS.length;

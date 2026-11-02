@@ -9,6 +9,7 @@ import {
   parseId,
   readJsonObject,
 } from '@/lib/api';
+import { requireAdminApi } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,7 +17,10 @@ interface Params {
   params: { id: string };
 }
 
-export function GET(_request: NextRequest, { params }: Params): NextResponse {
+export async function GET(request: NextRequest, { params }: Params): Promise<NextResponse> {
+  const auth = await requireAdminApi(request);
+  if (auth instanceof NextResponse) return auth;
+
   const id = parseId(params.id);
   if (!id) return jsonError(400, 'invalid_id');
   const entry = getKbEntry(getDb(), id);
@@ -24,6 +28,9 @@ export function GET(_request: NextRequest, { params }: Params): NextResponse {
 }
 
 export async function PUT(request: NextRequest, { params }: Params): Promise<NextResponse> {
+  const auth = await requireAdminApi(request);
+  if (auth instanceof NextResponse) return auth;
+
   const id = parseId(params.id);
   if (!id) return jsonError(400, 'invalid_id');
 
@@ -62,7 +69,10 @@ export async function PUT(request: NextRequest, { params }: Params): Promise<Nex
   return entry ? NextResponse.json({ item: entry }) : jsonError(404, 'not_found');
 }
 
-export function DELETE(_request: NextRequest, { params }: Params): NextResponse {
+export async function DELETE(request: NextRequest, { params }: Params): Promise<NextResponse> {
+  const auth = await requireAdminApi(request);
+  if (auth instanceof NextResponse) return auth;
+
   const id = parseId(params.id);
   if (!id) return jsonError(400, 'invalid_id');
   return deleteKbEntry(getDb(), id)

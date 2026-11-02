@@ -7,6 +7,7 @@ import {
 } from '@/lib/db';
 import { getDb } from '@/lib/db-runtime';
 import { jsonError } from '@/lib/api';
+import { requireAdminApi } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +16,10 @@ interface Params {
 }
 
 /** Conversation detail: metadata plus the full transcript. */
-export function GET(_request: NextRequest, { params }: Params): NextResponse {
+export async function GET(request: NextRequest, { params }: Params): Promise<NextResponse> {
+  const auth = await requireAdminApi(request);
+  if (auth instanceof NextResponse) return auth;
+
   const db = getDb();
   const conversation = getConversation(db, params.id);
   if (!conversation) return jsonError(404, 'not_found');
@@ -44,6 +48,9 @@ interface UpdateBody {
 
 /** Marks a conversation handled (or unhandled). */
 export async function PUT(request: NextRequest, { params }: Params): Promise<NextResponse> {
+  const auth = await requireAdminApi(request);
+  if (auth instanceof NextResponse) return auth;
+
   let body: UpdateBody;
   try {
     body = (await request.json()) as UpdateBody;

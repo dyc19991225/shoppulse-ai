@@ -1,5 +1,5 @@
 import { loadConfig } from './config';
-import { openDb, type DB } from './db';
+import { ensureEnvAdmin, openDb, type DB } from './db';
 
 let cached: { key: string; db: DB } | null = null;
 
@@ -15,6 +15,9 @@ export function getDb(): DB {
     if (cached) cached.db.close();
     cached = { key: config.dbPath, db: openDb({ dbPath: config.dbPath }) };
   }
+  // Cheap idempotent check on every call: keeps user 1 named like the env
+  // admin even when the env file changes without a restart of this process.
+  ensureEnvAdmin(cached.db, config);
   return cached.db;
 }
 

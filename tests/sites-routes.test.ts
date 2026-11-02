@@ -23,6 +23,7 @@ import {
   requestBaseUrl,
 } from '@/lib/sites';
 import { createTempDb, type TempDb } from './helpers/tempdb';
+import { adminSessionCookie, TEST_SESSION_SECRET } from './helpers/auth';
 
 let temp: TempDb | undefined;
 
@@ -30,6 +31,7 @@ beforeEach(() => {
   temp = createTempDb();
   vi.stubEnv('SHOPPULSE_DB_PATH', temp.path);
   vi.stubEnv('NODE_ENV', 'test');
+  vi.stubEnv('SESSION_SECRET', TEST_SESSION_SECRET);
   resetDbCache();
   resetWidgetRateLimits();
 });
@@ -53,8 +55,14 @@ function params(id: string | number) {
 function jsonRequest(url: string, method: string, body?: unknown, headers: Record<string, string> = {}) {
   return new NextRequest(`http://localhost${url}`, {
     method,
-    headers: { 'content-type': 'application/json', ...headers },
+    headers: { 'content-type': 'application/json', cookie: adminSessionCookie(), ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
+function getRequest(url: string): NextRequest {
+  return new NextRequest(/^https?:\/\//.test(url) ? url : `http://localhost${url}`, {
+    headers: { cookie: adminSessionCookie() },
   });
 }
 
@@ -155,7 +163,7 @@ describe('site helpers', () => {
 
 describe('GET/POST /api/admin/sites', () => {
   it('lists sites with embed snippets', async () => {
-    const response = listSites(new NextRequest('http://localhost/api/admin/sites'));
+    const response = await listSites(getRequest('/api/admin/sites'));
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.total).toBe(1);
@@ -221,7 +229,7 @@ describe('GET/POST /api/admin/sites', () => {
     const badJson = await createSiteRoute(
       new NextRequest('http://localhost/api/admin/sites', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', cookie: adminSessionCookie() },
         body: '{nope',
       }),
     );
@@ -248,12 +256,12 @@ describe('GET/POST /api/admin/sites', () => {
 describe('/api/admin/sites/[id]', () => {
   it('returns a single site', async () => {
     const site = getSiteByKey(db(), DEFAULT_SITE_KEY)!;
-    const response = getSiteRoute(new NextRequest('http://localhost'), params(site.id));
+    const response = await getSiteRoute(getRequest('/'), params(site.id));
     expect(response.status).toBe(200);
     expect((await response.json()).item.siteKey).toBe(DEFAULT_SITE_KEY);
 
-    expect(getSiteRoute(new NextRequest('http://localhost'), params(9999)).status).toBe(404);
-    expect(getSiteRoute(new NextRequest('http://localhost'), params('abc')).status).toBe(400);
+    expect((await getSiteRoute(getRequest('/'), params(9999))).status).toBe(404);
+    expect((await getSiteRoute(getRequest('/'), params('abc'))).status).toBe(400);
   });
 
   it('updates name, origins, rate limit and key', async () => {
@@ -335,11 +343,11 @@ describe('/api/admin/sites/[id]', () => {
       allowedOrigins: [],
       rateLimitPerMin: 30,
     });
-    expect(deleteSiteRoute(new NextRequest('http://localhost'), params(empty.id)).status).toBe(200);
+    expect((await deleteSiteRoute(getRequest('/'), params(empty.id))).status).toBe(200);
 
     const site = getSiteByKey(db(), DEFAULT_SITE_KEY)!;
     createConversation(db(), { id: 'conv-1', siteId: site.id });
-    const blocked = deleteSiteRoute(new NextRequest('http://localhost'), params(site.id));
+    const blocked = await deleteSiteRoute(getRequest('/'), params(site.id));
     expect(blocked.status).toBe(409);
     expect((await blocked.json()).error).toBe('site_has_conversations');
   });

@@ -38,3 +38,4 @@
 - 2026-11-02 10:58 (UTC+8) DEPLOY.md 已填写线上 URL；tests/deploy.test.ts 对应断言由 'TBD' 改为线上 URL；npm test 355 passed。
 - 2026-11-02 11:08 (UTC+8) 用户请求为朋友开 3 个试用账号（trial1–3）。代码调查：仅支持单一管理员（ADMIN_USERNAME + ADMIN_PASSWORD_HASH 来自 env，verifyAdminCredentials 只比对这一组），无 users 表、无注册/邀请/CLI/管理 API；数据全局共享，kb_entries/products/copy_history 无 owner/tenant 列（sites 只区分挂件 site_key，不是账号隔离）。按指示停止：未创建账号、未改代码、未部署、未动 zz。
 - 2026-11-02 11:10 (UTC+8) v0.2 多用户获批（11:07）：仅本地实现，不部署、不推送。写 specs/multi-user.md（users 表、迁移 v2 owner_id 归 admin、会话 uid/ver、隔离规则、CLI deploy/user.mjs、测试、待批准的部署步骤）与 specs/tasks.md M1–M4。
+- 2026-11-02 11:56 (UTC+8) M1 完成（Claude Code）：users 表 + 迁移 v2（owner_id 默认 1、products 重建为 UNIQUE(owner_id, sku)、外键检查）、ensureEnvAdmin、按用户表登录（禁用/env 兜底/未知用户 dummy 校验）、会话 uid/ver 校验；所有 /api/admin/* 路由现在调用 requireAdminApi。测试 395/395，tsc 通过。

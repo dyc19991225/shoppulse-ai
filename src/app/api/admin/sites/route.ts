@@ -11,11 +11,15 @@ import {
   parseOrigins,
   requestBaseUrl,
 } from '@/lib/sites';
+import { requireAdminApi } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 /** Sites with their embed snippets (AC6.1). */
-export function GET(request: NextRequest): NextResponse {
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  const auth = await requireAdminApi(request);
+  if (auth instanceof NextResponse) return auth;
+
   const items = listSites(getDb());
   const base = requestBaseUrl(request);
   return NextResponse.json({
@@ -25,6 +29,9 @@ export function GET(request: NextRequest): NextResponse {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  const auth = await requireAdminApi(request);
+  if (auth instanceof NextResponse) return auth;
+
   const parsed = await readJsonObject(request);
   if (!parsed.ok) return parsed.response;
   const body = parsed.body;

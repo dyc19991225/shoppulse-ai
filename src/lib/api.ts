@@ -50,10 +50,13 @@ export function parseId(value: string): number | null {
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
-/** True when SQLite rejected a duplicate product SKU. */
+/** True when SQLite rejected a duplicate SKU for the same owner (v2 schema). */
 export function isUniqueSkuError(error: unknown): boolean {
   return (
-    error instanceof Error && /UNIQUE constraint failed: products\.sku/i.test(error.message)
+    error instanceof Error &&
+    (/UNIQUE constraint failed: products\.owner_id, products\.sku/i.test(error.message) ||
+      // v1 (global UNIQUE(sku)) keeps the old message shape.
+      /UNIQUE constraint failed: products\.sku/i.test(error.message))
   );
 }
 

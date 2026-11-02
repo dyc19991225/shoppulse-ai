@@ -2,11 +2,15 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { listConversations, type ConversationListOptions } from '@/lib/db';
 import { getDb } from '@/lib/db-runtime';
 import { jsonError, parseId } from '@/lib/api';
+import { requireAdminApi } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 /** Conversation list with filters (AC7.1). */
-export function GET(request: NextRequest): NextResponse {
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  const auth = await requireAdminApi(request);
+  if (auth instanceof NextResponse) return auth;
+
   const params = request.nextUrl.searchParams;
   const options: ConversationListOptions = {};
 

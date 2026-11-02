@@ -3,7 +3,9 @@ import { redirect } from 'next/navigation';
 import { cookies, headers } from 'next/headers';
 import { Sparkles } from 'lucide-react';
 import { loadConfig } from '@/lib/config';
-import { SESSION_COOKIE, verifySession } from '@/lib/auth/session';
+import { getCurrentUser, isAuthConfigured } from '@/lib/auth';
+import { SESSION_COOKIE } from '@/lib/auth/session';
+import { getDb } from '@/lib/db-runtime';
 import { getTranslator, LOCALE_COOKIE, negotiateLocale, resolveLocale } from '@/lib/i18n';
 import { LocaleSwitcher } from '@/components/locale-switcher';
 import { LoginForm } from './login-form';
@@ -21,11 +23,17 @@ export default async function LoginPage({
     : negotiateLocale(headers().get('accept-language'));
   const t = getTranslator(locale);
 
-  const secret = process.env.SESSION_SECRET ?? '';
-  if (secret) {
-    const session = await verifySession(cookies().get(SESSION_COOKIE)?.value, secret);
-    if (session.valid) redirect('/admin');
+  // A disabled or reset account must not bounce back into /admin.
+  const token = cookies().get(SESSION_COOKIE)?.value;
+  let alreadySignedIn = false;
+  if (token) {
+    try {
+      alreadySignedIn = Boolean(await getCurrentUser(token));
+    } catch {
+      // A broken DB/config must not break the login form itself.
+    }
   }
+  if (alreadySignedIn) redirect('/admin');
 
   let nextPath = searchParams.next ?? '/admin';
   if (!nextPath.startsWith('/') || nextPath.startsWith('//')) nextPath = '/admin';
@@ -33,8 +41,7 @@ export default async function LoginPage({
   // Surface configuration problems before the user types a password.
   let configured = true;
   try {
-    const config = loadConfig(undefined, { checkLlmReady: false });
-    configured = Boolean(config.sessionSecret && (config.admin.passwordHash || config.admin.password));
+    configured = isAuthConfigured(getDb(), loadConfig(undefined, { checkLlmReady: false }));
   } catch {
     configured = false;
   }
