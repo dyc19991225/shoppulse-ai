@@ -66,12 +66,12 @@ Codex（gpt-6-luna，low reasoning；升档前先问用户）负责审查与前�
 4. 多渠道接入（目前只有网站挂件）。
 5. 团队（同一店铺多坐席、角色权限）。
 6. 流程自动化（关键词/意图触发、自动分配）。
-7. Demo 模式下回答的 `[policy]` 标签显示问题（Mock 模式回复里露出内部标签，需清理）。
+7. Demo 模式的 `[policy]` 标签（用户提出的想法，具体期望需向用户确认）。
 8. 自助注册流程（目前只能用 `deploy/user.mjs` 由管理员创建账号）。
 
 ## 5. 线上与 zz 部署
 - 线上地址：**https://shop-ai.dycxy.shop**（登录 `/login`，演示 `/demo`，健康检查 `/api/health`）。
-- DNS：Cloudflare 管理 `dycxy.shop`，`shop-ai` A 记录 → `192.74.249.13`（DNS only，由 Caddy 签发证书）。
+- DNS：Cloudflare 管理 `dycxy.shop`，`shop-ai` A 记录 → `192.74.249.13`（Caddy 通过 Let's Encrypt 自动签发证书；修改 DNS 前先确认 Cloudflare 代理状态）。
 - 服务器 **zz**：`192.74.249.13`，SSH 端口 **22491**，用户 root，**只能经用户的 Windows 电脑**（Grok Bot 的 machine：DESKTOP-2LFM16F）执行 `ssh -o BatchMode=yes -p 22491 root@192.74.249.13 "..."`；zz 时钟为 UTC。
   - 经验：PowerShell 会破坏复杂的内联命令 → 在本地写好脚本，打包 tgz，先复制到 Windows，再 `scp -P 22491` 到 zz `/tmp`，`tar -xzf` 后 `bash` 执行。
   - zz 上没有 `sqlite3` CLI，查库用 release 内 `node_modules/better-sqlite3`。
