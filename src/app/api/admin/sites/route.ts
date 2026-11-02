@@ -1,0 +1,66 @@
+import { NextResponse, type NextRequest } from 'next/server';
+import { createSite, listSites } from '@/lib/db';
+import { getDb } from '@/lib/db-runtime';
+import { asString, jsonError, readJsonObject } from '@/lib/api';
+import {
+  embedSnippet,
+  generateSiteKey,
+  isAllowedRateLimit,
+  isValidSiteKey,
+  MAX_SITES,
+  parseOrigins,
+  requestBaseUrl,
+} from '@/lib/sites';
+
+export const dynamic = 'force-dynamic';
+
+/** Sites with their embed snippets (AC6.1). */
+export function GET(request: NextRequest): NextResponse {
+  const items = listSites(getDb());
+  const base = requestBaseUrl(request);
+  return NextResponse.json({
+    items: items.map((site) => ({ ...site, embedSnippet: embedSnippet(site.siteKey, base) })),
+    total: items.length,
+  });
+}
+
+export async function POST(request: NextRequest): Promise<NextResponse> {
+  const parsed = await readJsonObject(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
+
+  const name = asString(body.name, 100);
+  if (!name) return jsonError(400, 'invalid_name');
+
+  const origins = parseOrigins(body.allowedOrigins ?? []);
+  if (origins === null) return jsonError(400, 'invalid_origins');
+
+  const rateLimit = body.rateLimitPerMin === undefined ? 30 : body.rateLimitPerMin;
+  if (!isAllowedRateLimit(rateLimit)) return jsonError(400, 'invalid_rate_limit');
+
+  const siteKey =
+    body.siteKey === undefined || body.siteKey === ''
+      ? generateSiteKey()
+      : typeof body.siteKey === 'string'
+        ? body.siteKey.trim()
+        : '';
+  if (!isValidSiteKey(siteKey)) return jsonError(400, 'invalid_site_key');
+
+  const db = getDb();
+  if (listSites(db).length >= MAX_SITES) return jsonError(409, 'too_many_sites');
+
+  const duplicate = db
+    .prepare('SELECT id FROM sites WHERE site_key = ?')
+    .get(siteKey) as { id: number } | undefined;
+  if (duplicate) return jsonError(409, 'duplicate_site_key');
+
+  try {
+    const site = createSite(db, { name, siteKey, allowedOrigins: origins, rateLimitPerMin: rateLimit });
+    return NextResponse.json(
+      { item: { ...site, embedSnippet: embedSnippet(site.siteKey, requestBaseUrl(request)) } },
+      { status: 201 },
+    );
+  } catch {
+    return jsonError(409, 'duplicate_site_key');
+  }
+}

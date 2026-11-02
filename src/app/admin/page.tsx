@@ -1,12 +1,24 @@
 import Link from 'next/link';
-import { BookOpen, ExternalLink, Package, Sparkles } from 'lucide-react';
+import { BookOpen, ExternalLink, MessagesSquare, Package, Settings, Sparkles } from 'lucide-react';
 import { getRequestTranslator } from '@/lib/i18n/server';
 import { DEFAULT_SITE_KEY } from '@/lib/db';
+import type { Intent } from '@/lib/intent';
+import { StatsPanel } from '@/components/admin/stats-panel';
 
 export const dynamic = 'force-dynamic';
 
 export default function AdminDashboardPage() {
   const t = getRequestTranslator();
+
+  const intentLabels = {
+    product: t('intent.product'),
+    price: t('intent.price'),
+    logistics: t('intent.logistics'),
+    after_sale: t('intent.after_sale'),
+    complaint: t('intent.complaint'),
+    handoff: t('intent.handoff'),
+    other: t('intent.other'),
+  } satisfies Record<Intent, string>;
 
   const cards = [
     {
@@ -26,6 +38,18 @@ export default function AdminDashboardPage() {
       icon: Sparkles,
       title: t('nav.copywriting'),
       description: t('app.tagline'),
+    },
+    {
+      href: '/admin/conversations',
+      icon: MessagesSquare,
+      title: t('nav.conversations'),
+      description: t('conversations.subtitle'),
+    },
+    {
+      href: '/admin/sites',
+      icon: Settings,
+      title: t('nav.sites'),
+      description: t('sites.subtitle'),
     },
   ];
 
@@ -61,6 +85,30 @@ export default function AdminDashboardPage() {
           ))}
         </div>
       </section>
+
+      <StatsPanel
+        labels={{
+          title: t('stats.title'),
+          subtitle: t('stats.subtitle'),
+          conversations: t('stats.conversations'),
+          needsHuman: t('stats.needsHuman'),
+          handled: t('stats.handled'),
+          handoffRate: t('stats.handoffRate'),
+          intentShare: t('stats.intentShare'),
+          topQuestions: t('stats.topQuestions'),
+          noData: t('stats.noData'),
+          kbEntries: t('stats.kbEntries'),
+          products: t('stats.products'),
+          copyHistory: t('stats.copyHistory'),
+          loadFailed: t('stats.loadFailed'),
+          table: t('stats.table'),
+          term: t('stats.term'),
+          count: t('stats.count'),
+          viewConversations: t('stats.viewConversations'),
+          ofTotal: t('stats.ofTotal'),
+          intentLabels,
+        }}
+      />
 
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">{t('admin.embedTitle')}</h2>
