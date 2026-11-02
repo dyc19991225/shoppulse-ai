@@ -150,7 +150,8 @@ log "installing release $BUILD_VERSION ($RELEASE_ID)"
 mv "$SRC" "$RELEASE_DIR"
 chown -R root:root "$RELEASE_DIR"
 chmod -R u=rwX,go=rX "$RELEASE_DIR"
-chmod +x "$RELEASE_DIR/deploy/install.sh" "$RELEASE_DIR/deploy/backup.sh"
+chmod +x "$RELEASE_DIR/deploy/install.sh" "$RELEASE_DIR/deploy/backup.sh" \
+  "$RELEASE_DIR/deploy/user.mjs"
 
 PREVIOUS=""
 if [[ -L "$PREFIX/current" ]]; then

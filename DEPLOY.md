@@ -130,6 +130,152 @@ sudo systemctl restart shoppulse-ai
 
 数据在 `/var/lib/shoppulse-ai/shoppulse.db`，升级/回滚都不会动它。
 
+### 升级到 v0.2（多用户）
+
+> **状态：步骤已准备，尚未在生产执行。** 执行前需另有明确批准。
+
+v0.2 会在服务启动时把数据库从 schema v1 迁移到 v2（新增 `users` 表、所有业务表的 `owner_id`、按 owner 的 SKU 唯一约束；存量数据全部归 user 1 / `admin`）。迁移一次性、在事务中完成，**旧版本无法读取 v2 数据库**，所以升级前必须备份，回滚必须同时恢复数据库。
+
+#### 1. 备份生产数据库
+
+先触发一次在线备份（使用当前 release 的 `backup.sh`）：
+
+```bash
+sudo systemctl start shoppulse-backup.service
+sudo ls -lh /var/backups/shoppulse-ai/
+```
+
+把刚生成的备份另存为“升级前”副本，并校验：
+
+```bash
+LATEST="$(sudo ls -1t /var/backups/shoppulse-ai/shoppulse-*.db.gz | head -n1)"
+sudo cp -a "$LATEST" /var/backups/shoppulse-ai/shoppulse-pre-v0.2.db.gz
+sudo gzip -t /var/backups/shoppulse-ai/shoppulse-pre-v0.2.db.gz
+sudo chmod 600 /var/backups/shoppulse-ai/shoppulse-pre-v0.2.db.gz
+```
+
+确认 `PRAGMA user_version` 仍为 1（升级前的状态），并记下当前 release 路径供回滚：
+
+```bash
+sqlite3 /var/lib/shoppulse-ai/shoppulse.db 'PRAGMA user_version;'   # 1
+readlink -f /opt/shoppulse-ai/current                                # 记下 <旧 release>
+```
+
+#### 2. 构建、上传并升级（env 不变）
+
+在构建机上：
+
+```bash
+cd /path/to/shoppulse-ai
+git log --oneline -1          # 确认是包含 v0.2 的提交
+bash deploy/build-release.sh
+scp dist/shoppulse-ai-*.tar.gz dist/shoppulse-ai-*.tar.gz.sha256 zz:/tmp/
+```
+
+在 zz 上校验并安装：
+
+```bash
+ssh zz
+cd /tmp && sha256sum -c shoppulse-ai-*.tar.gz.sha256
+sudo tar -xzf /tmp/shoppulse-ai-*.tar.gz -C /tmp
+sudo bash /tmp/shoppulse-ai-*/deploy/install.sh --tarball /tmp/shoppulse-ai-*.tar.gz
+```
+
+`install.sh` 只切换 `current` 软链、重启服务，**不会覆盖** `/opt/shoppulse-ai/shoppulse.env`。服务启动时自动执行 v2 迁移；`install.sh` 末尾的健康检查通过即表示迁移成功。随后确认：
+
+```bash
+sqlite3 /var/lib/shoppulse-ai/shoppulse.db 'PRAGMA user_version;'   # 2
+sqlite3 /var/lib/shoppulse-ai/shoppulse.db "SELECT id, username, role FROM users;"
+# 1|admin|admin（若 ADMIN_USERNAME 不同，首次启动会把它重命名为该用户名）
+curl -fsS http://127.0.0.1:8802/api/health | jq .
+```
+
+管理员仍用原 `ADMIN_USERNAME` / `ADMIN_PASSWORD_HASH` 登录，存量数据不变。
+
+#### 3. 创建试用账号
+
+CLI 在发布包内（`deploy/user.mjs`），使用发布包自带的 better-sqlite3，无需源码或 tsx。密码只写入 `--out` 文件（自动创建为 0600），**不会**出现在 stdout/stderr；每个新用户会自动获得一个默认站点（随机 site key，允许域名取自 `--site-origin`，限流 30），站点 key 会打印出来（不是秘密），可直接给朋友用于嵌入挂件。
+
+以 `shoppulse` 用户运行（数据库属主），先建 3 个试用账号：
+
+```bash
+sudo runuser -u shoppulse -- env SHOPPULSE_DB_PATH=/var/lib/shoppulse-ai/shoppulse.db \
+  node /opt/shoppulse-ai/current/deploy/user.mjs add trial1 \
+  --out /var/lib/shoppulse-ai/trial-accounts.txt \
+  --site-origin https://shop-ai.dycxy.shop
+```
+
+`trial2`、`trial3` 同理（改用户名）。若朋友的站点域名不是 `https://shop-ai.dycxy.shop`，把 `--site-origin` 换成实际嵌入挂件的站点 origin（含协议、不带路径），可重复传多个。
+
+确认账号清单（不含哈希、不含密码）：
+
+```bash
+sudo runuser -u shoppulse -- env SHOPPULSE_DB_PATH=/var/lib/shoppulse-ai/shoppulse.db \
+  node /opt/shoppulse-ai/current/deploy/user.mjs list
+```
+
+#### 4. 保管凭据文件
+
+`--out` 文件必须放在 `shoppulse` 可写目录（如 `/var/lib/shoppulse-ai`），生成后立即移到 root-only 位置：
+
+```bash
+sudo mv /var/lib/shoppulse-ai/trial-accounts.txt /root/shoppulse-trial-accounts.txt
+sudo chown root:root /root/shoppulse-trial-accounts.txt
+sudo chmod 600 /root/shoppulse-trial-accounts.txt
+sudo ls -l /root/shoppulse-trial-accounts.txt        # -rw------- root root
+```
+
+再取回本机桌面（`C:\Users\10534\Desktop\shoppulse-trial-accounts.txt`）：
+
+```powershell
+scp root@zz:/root/shoppulse-trial-accounts.txt C:\Users\10534\Desktop\shoppulse-trial-accounts.txt
+```
+
+取回后按需删除服务器上的副本；**不要**把该文件提交到仓库、粘贴到聊天或写进任何日志。
+
+日常账号操作（均以 `shoppulse` 用户、指向生产 DB 运行）：
+
+```bash
+# 重置密码：旧会话立即失效，新密码追加到 --out 文件（先写到可写目录）
+sudo runuser -u shoppulse -- env SHOPPULSE_DB_PATH=/var/lib/shoppulse-ai/shoppulse.db \
+  node /opt/shoppulse-ai/current/deploy/user.mjs reset-password trial1 \
+  --out /var/lib/shoppulse-ai/trial-accounts.txt
+sudo mv /var/lib/shoppulse-ai/trial-accounts.txt /root/shoppulse-trial-accounts.txt
+sudo chown root:root /root/shoppulse-trial-accounts.txt && sudo chmod 600 /root/shoppulse-trial-accounts.txt
+
+# 停用 / 恢复：disable 会让该用户现有会话立即失效
+sudo runuser -u shoppulse -- env SHOPPULSE_DB_PATH=/var/lib/shoppulse-ai/shoppulse.db \
+  node /opt/shoppulse-ai/current/deploy/user.mjs disable trial1
+sudo runuser -u shoppulse -- env SHOPPULSE_DB_PATH=/var/lib/shoppulse-ai/shoppulse.db \
+  node /opt/shoppulse-ai/current/deploy/user.mjs enable trial1
+```
+
+注意 `--out` 必须位于 `shoppulse` 可写目录（上面的示例写到 `/var/lib/shoppulse-ai` 后再用 root 移走）；`/root` 不可由 `shoppulse` 写入。CLI 要求数据库已是 schema v2，否则会提示先启动一次服务完成迁移。
+
+#### 5. 回滚
+
+v2 迁移不可逆，回滚 = 恢复升级前数据库 + 切回旧 release：
+
+```bash
+sudo systemctl stop shoppulse-ai
+# 保留现场（诊断用）
+sudo mv /var/lib/shoppulse-ai/shoppulse.db /var/lib/shoppulse-ai/shoppulse.db.v2-failed
+sudo rm -f /var/lib/shoppulse-ai/shoppulse.db-wal /var/lib/shoppulse-ai/shoppulse.db-shm
+# 恢复升级前备份
+sudo gzip -dc /var/backups/shoppulse-ai/shoppulse-pre-v0.2.db.gz | sudo tee /var/lib/shoppulse-ai/shoppulse.db >/dev/null
+sudo chown shoppulse:shoppulse /var/lib/shoppulse-ai/shoppulse.db
+# 与现有数据库权限保持一致（backup.sh 恢复演练使用 750 目录 + 属主可写）
+sudo chmod 600 /var/lib/shoppulse-ai/shoppulse.db
+# 切回旧 release（用第 1 步记下的路径）
+sudo ln -sfn /opt/shoppulse-ai/releases/<旧 release> /opt/shoppulse-ai/current.new
+sudo mv -Tf /opt/shoppulse-ai/current.new /opt/shoppulse-ai/current
+sudo systemctl start shoppulse-ai
+sqlite3 /var/lib/shoppulse-ai/shoppulse.db 'PRAGMA user_version;'   # 1
+curl -fsS http://127.0.0.1:8802/api/health | jq .
+```
+
+确认恢复后再删除 `shoppulse.db.v2-failed`（其中包含升级后创建的试用账号，保留到确认不再需要为止）。`shoppulse.env` 与 Caddy 配置无需改动。
+
 ## 4. Caddy 反向代理（新增站点块）
 
 > **不要重写 Caddyfile。** 现有 `dyc.dycxy.shop`、`shop.dycxy.shop`、`tutor.dycxy.shop`（→ 8801）等站点块必须原样保留。只追加 `shop-ai.dycxy.shop` 块。

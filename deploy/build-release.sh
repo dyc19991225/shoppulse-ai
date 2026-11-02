@@ -115,7 +115,8 @@ cp -a public "$STAGE/public"
 # Deploy helpers and docs travel with the release so install/backup work on zz
 # without the source tree or dev dependencies.
 cp -a deploy/. "$STAGE/deploy/"
-chmod +x "$STAGE/deploy/build-release.sh" "$STAGE/deploy/install.sh" "$STAGE/deploy/backup.sh"
+chmod +x "$STAGE/deploy/build-release.sh" "$STAGE/deploy/install.sh" "$STAGE/deploy/backup.sh" \
+  "$STAGE/deploy/user.mjs"
 cp -a README.md DEPLOY.md DELIVERY.md LICENSE "$STAGE/"
 
 cat > "$STAGE/BUILD_INFO" <<EOF

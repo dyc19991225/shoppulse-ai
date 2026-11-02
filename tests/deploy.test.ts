@@ -124,7 +124,7 @@ describe('script syntax and permissions', () => {
   });
 
   it('node helpers parse', () => {
-    for (const name of ['hash-password.mjs', 'sqlite-backup.mjs']) {
+    for (const name of ['hash-password.mjs', 'sqlite-backup.mjs', 'user.mjs']) {
       const result = spawnSync(process.execPath, ['--check', path.join(DEPLOY, name)], {
         encoding: 'utf8',
       });
@@ -325,6 +325,7 @@ describe('build-release.sh', () => {
     for (const file of ['install.sh', 'backup.sh']) {
       fs.writeFileSync(path.join(repo, 'deploy', file), '# stub');
     }
+    fs.copyFileSync(path.join(DEPLOY, 'user.mjs'), path.join(repo, 'deploy', 'user.mjs'));
     for (const file of ['README.md', 'DEPLOY.md', 'DELIVERY.md', 'LICENSE']) {
       fs.writeFileSync(path.join(repo, file), 'doc');
     }
@@ -357,6 +358,8 @@ describe('build-release.sh', () => {
     expect(fs.existsSync(path.join(packed, '.next', 'static', 'chunks', 'app.js'))).toBe(true);
     expect(fs.existsSync(path.join(packed, 'public', 'widget.js'))).toBe(true);
     expect(fs.existsSync(path.join(packed, 'deploy', 'install.sh'))).toBe(true);
+    // User management CLI travels with the release so it can run on the server.
+    expect(fs.existsSync(path.join(packed, 'deploy', 'user.mjs'))).toBe(true);
     expect(fs.existsSync(path.join(packed, 'DEPLOY.md'))).toBe(true);
     expect(
       fs.existsSync(
@@ -457,6 +460,26 @@ describe('docs', () => {
     expect(deploy).toContain('Node 24');
     expect(deploy).toContain('DNS A 记录');
     expect(deploy).toContain('https://shop-ai.dycxy.shop');
+  });
+
+  it('DEPLOY has the v0.2 multi-user upgrade runbook (prepared, not run)', () => {
+    const deploy = read('DEPLOY.md');
+    expect(deploy).toContain('### 升级到 v0.2（多用户）');
+    expect(deploy).toContain('shoppulse-pre-v0.2.db.gz');
+    expect(deploy).toContain('PRAGMA user_version');
+    expect(deploy).toContain('runuser -u shoppulse');
+    expect(deploy).toContain(
+      'SHOPPULSE_DB_PATH=/var/lib/shoppulse-ai/shoppulse.db',
+    );
+    expect(deploy).toContain('/opt/shoppulse-ai/current/deploy/user.mjs add trial1');
+    expect(deploy).toContain('--out /var/lib/shoppulse-ai/trial-accounts.txt');
+    expect(deploy).toContain('--site-origin https://shop-ai.dycxy.shop');
+    expect(deploy).toContain('/root/shoppulse-trial-accounts.txt');
+    expect(deploy).toContain('shoppulse-trial-accounts.txt');
+    // Rollback restores the DB backup and the previous release symlink.
+    expect(deploy).toContain('shoppulse.db.v2-failed');
+    expect(deploy).toContain('releases/<旧 release>');
+    expect(deploy).toContain('mv -Tf /opt/shoppulse-ai/current.new /opt/shoppulse-ai/current');
   });
 
   it('DELIVERY has features, acceptance checklist, embed snippet and acceptance results', () => {
