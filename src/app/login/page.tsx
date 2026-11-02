@@ -40,11 +40,12 @@ export default async function LoginPage({
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-12">
-      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-indigo-50 via-white to-violet-50 px-4 py-12">
+      <div aria-hidden className="pointer-events-none absolute -left-28 -top-32 h-96 w-96 rounded-full bg-indigo-200/30 blur-3xl" />
+      <div className="relative w-full max-w-md rounded-3xl border border-white bg-white/90 p-6 shadow-xl shadow-indigo-900/5 backdrop-blur sm:p-8">
         <div className="mb-6 flex items-center justify-between">
           <Link href="/" className="inline-flex items-center gap-2 text-lg font-bold">
-            <Sparkles className="h-5 w-5 text-brand-500" aria-hidden />
+            <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-500/20"><Sparkles className="h-5 w-5" aria-hidden /></span>
             ShopPulse AI
           </Link>
           <LocaleSwitcher locale={locale} />

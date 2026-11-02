@@ -295,7 +295,7 @@ export function KnowledgeManager({ labels }: { labels: KnowledgeLabels }) {
               <select
                 value={draft.type}
                 onChange={(event) => setDraft({ ...draft, type: event.target.value as KbType })}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm shadow-sm transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
               >
                 {TYPE_OPTIONS.map((type) => (
                   <option key={type} value={type}>
@@ -312,7 +312,7 @@ export function KnowledgeManager({ labels }: { labels: KnowledgeLabels }) {
                 onChange={(event) => setDraft({ ...draft, title: event.target.value })}
                 required
                 maxLength={200}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm shadow-sm transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
               />
             </label>
 
@@ -324,7 +324,7 @@ export function KnowledgeManager({ labels }: { labels: KnowledgeLabels }) {
                 required
                 rows={6}
                 maxLength={20000}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm shadow-sm transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
               />
             </label>
 
@@ -334,7 +334,7 @@ export function KnowledgeManager({ labels }: { labels: KnowledgeLabels }) {
                 value={draft.keywords}
                 onChange={(event) => setDraft({ ...draft, keywords: event.target.value })}
                 maxLength={500}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm shadow-sm transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
               />
               <span className="mt-1 block text-xs font-normal text-slate-400">
                 {labels.keywordsHint}

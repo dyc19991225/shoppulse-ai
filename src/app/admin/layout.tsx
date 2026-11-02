@@ -44,7 +44,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     <div className="flex min-h-screen bg-slate-50">
       <AdminSidebar locale={locale} labels={labels} username={username} />
       <div className="min-w-0 flex-1">
-        <main className="mx-auto max-w-6xl px-8 py-8">{children}</main>
+        <main className="mx-auto max-w-7xl px-4 pb-8 pt-20 sm:px-6 sm:py-8 md:pt-8 lg:px-8">{children}</main>
       </div>
     </div>
   );

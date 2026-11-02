@@ -252,7 +252,7 @@ export function CopywritingStudio({
             value={productId}
             onChange={(event) => setProductId(event.target.value)}
             disabled={loadingProducts || products.length === 0}
-            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
           >
             {products.length === 0 ? (
               <option value="">{labels.noProducts}</option>
@@ -277,7 +277,7 @@ export function CopywritingStudio({
             onChange={(event) => setAudience(event.target.value)}
             placeholder={labels.audiencePlaceholder}
             maxLength={300}
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm shadow-sm transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
           />
         </label>
 
@@ -292,7 +292,7 @@ export function CopywritingStudio({
                 : labels.sellingPointsPlaceholder
             }
             rows={4}
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm shadow-sm transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
           />
         </label>
 
@@ -301,7 +301,7 @@ export function CopywritingStudio({
           <select
             value={tone}
             onChange={(event) => setTone(event.target.value as CopyTone)}
-            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
           >
             {COPY_TONES.map((option) => (
               <option key={option} value={option}>

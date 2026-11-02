@@ -76,7 +76,7 @@ export default function AdminDashboardPage() {
             <Link
               key={href}
               href={href}
-              className="group rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-brand-500 hover:shadow"
+              className="group rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-500/50 hover:shadow-lg hover:shadow-slate-200/60"
             >
               <Icon className="h-5 w-5 text-brand-600" aria-hidden />
               <h3 className="mt-3 font-medium text-slate-900">{title}</h3>

@@ -262,7 +262,7 @@ export function ProductsManager({ labels }: { labels: ProductsLabels }) {
         <div className="flex flex-wrap items-center gap-2">
           <a
             href="/api/admin/products/template"
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100 text-slate-700 hover:bg-slate-50"
           >
             <Download className="h-4 w-4" aria-hidden />
             {labels.downloadTemplate}
@@ -271,7 +271,7 @@ export function ProductsManager({ labels }: { labels: ProductsLabels }) {
             type="button"
             onClick={() => fileRef.current?.click()}
             disabled={importing}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100 text-slate-700 hover:bg-slate-50 disabled:opacity-60"
           >
             {importing ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -307,7 +307,7 @@ export function ProductsManager({ labels }: { labels: ProductsLabels }) {
       ) : null}
 
       {importResult ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm shadow-sm">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 text-sm shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <p className="flex items-start gap-2 text-slate-700">
               {importResult.failed > 0 ? (
@@ -465,7 +465,7 @@ export function ProductsManager({ labels }: { labels: ProductsLabels }) {
                   onChange={(event) => setDraft({ ...draft, name: event.target.value })}
                   required
                   maxLength={200}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm shadow-sm transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
                 />
               </label>
               <label className="block text-sm font-medium text-slate-700">
@@ -474,7 +474,7 @@ export function ProductsManager({ labels }: { labels: ProductsLabels }) {
                   value={draft.sku}
                   onChange={(event) => setDraft({ ...draft, sku: event.target.value })}
                   maxLength={100}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm shadow-sm transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
                 />
               </label>
               <label className="block text-sm font-medium text-slate-700">
@@ -483,7 +483,7 @@ export function ProductsManager({ labels }: { labels: ProductsLabels }) {
                   value={draft.category}
                   onChange={(event) => setDraft({ ...draft, category: event.target.value })}
                   maxLength={100}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm shadow-sm transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
                 />
               </label>
               <label className="block text-sm font-medium text-slate-700">
@@ -494,7 +494,7 @@ export function ProductsManager({ labels }: { labels: ProductsLabels }) {
                   step="0.01"
                   value={draft.price}
                   onChange={(event) => setDraft({ ...draft, price: event.target.value })}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm shadow-sm transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
                 />
               </label>
               <label className="block text-sm font-medium text-slate-700">
@@ -505,7 +505,7 @@ export function ProductsManager({ labels }: { labels: ProductsLabels }) {
                   step="1"
                   value={draft.stock}
                   onChange={(event) => setDraft({ ...draft, stock: event.target.value })}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm shadow-sm transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
                 />
               </label>
               <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
@@ -515,7 +515,7 @@ export function ProductsManager({ labels }: { labels: ProductsLabels }) {
                   onChange={(event) => setDraft({ ...draft, description: event.target.value })}
                   rows={3}
                   maxLength={5000}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm shadow-sm transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
                 />
               </label>
               <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
@@ -525,7 +525,7 @@ export function ProductsManager({ labels }: { labels: ProductsLabels }) {
                   onChange={(event) => setDraft({ ...draft, sellingPoints: event.target.value })}
                   rows={2}
                   maxLength={1000}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm shadow-sm transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
                 />
               </label>
               <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
@@ -535,7 +535,7 @@ export function ProductsManager({ labels }: { labels: ProductsLabels }) {
                   onChange={(event) => setDraft({ ...draft, imageUrl: event.target.value })}
                   placeholder="https://"
                   maxLength={2000}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm shadow-sm transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
                 />
               </label>
               <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
@@ -545,7 +545,7 @@ export function ProductsManager({ labels }: { labels: ProductsLabels }) {
                   onChange={(event) => setDraft({ ...draft, url: event.target.value })}
                   placeholder="https://"
                   maxLength={2000}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm shadow-sm transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
                 />
               </label>
             </div>

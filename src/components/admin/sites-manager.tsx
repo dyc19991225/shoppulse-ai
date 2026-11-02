@@ -261,7 +261,7 @@ export function SitesManager({
       ) : (
         <div className="space-y-4">
           {sites.map((site) => (
-            <article key={site.id} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <article key={site.id} className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <h2 className="font-semibold text-slate-900">{site.name}</h2>
@@ -371,7 +371,7 @@ export function SitesManager({
                 onChange={(event) => setDraft({ ...draft, name: event.target.value })}
                 required
                 maxLength={100}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm shadow-sm transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
               />
             </label>
 
@@ -422,7 +422,7 @@ export function SitesManager({
                 step="1"
                 value={draft.rateLimit}
                 onChange={(event) => setDraft({ ...draft, rateLimit: event.target.value })}
-                className="mt-1 w-32 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="mt-1 w-32 rounded-xl border border-slate-200 px-3 py-2.5 text-sm shadow-sm transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
               />
               <span className="mt-1 block text-xs font-normal text-slate-500">
                 {labels.rateLimitHint}

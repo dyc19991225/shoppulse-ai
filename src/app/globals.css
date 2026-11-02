@@ -9,3 +9,10 @@
 body {
   @apply bg-slate-50 text-slate-900 antialiased;
 }
+
+button, input, select, textarea, a { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+}
+::selection { background: #e0e7ff; color: #312e81; }
