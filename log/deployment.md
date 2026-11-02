@@ -35,3 +35,4 @@
 - 2026-11-02 10:55 (UTC+8) HTTPS 验证：`/` 200，`/widget.js` 200，`/demo` 200，`/login` 200，`/api/health` 200（ok=true，llm.mode=llm，model deepseek-v4.1-flash），`/admin` 307 → `https://shop-ai.dycxy.shop/login?next=%2Fadmin`。真实聊天 SSE：meta → 43 个 delta → done，首字节 0.53s，总 2.73s，mock=false（新库无知识库，回答为“暂无该信息”并提示转人工，符合防编造设计）。
 - 2026-11-02 10:56 (UTC+8) 后台：用凭据文件在 zz 上经 HTTPS 登录 200、/admin 200；默认站点 demo-site-key 允许域名追加 `https://shop-ai.dycxy.shop`（/demo 页挂件可用），嵌入代码为 `https://shop-ai.dycxy.shop/widget.js`；带本域 Origin 聊天 200，伪造 Origin 403。手动备份 OK（/var/backups/shoppulse-ai/shoppulse-20261102-025602.db.gz）；MemoryCurrent≈95MB / Max 400M。凭据文件已拷到用户 Windows 桌面 `C:\Users\10534\Desktop\shoppulse-admin.txt`。x-ui/xray、8788 网关、dyc/shop 站点均未改动。
 - 2026-11-02 10:56 (UTC+8) 上线：**https://shop-ai.dycxy.shop**。
+- 2026-11-02 10:58 (UTC+8) DEPLOY.md 已填写线上 URL；tests/deploy.test.ts 对应断言由 'TBD' 改为线上 URL；npm test 355 passed。

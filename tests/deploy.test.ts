@@ -456,7 +456,7 @@ describe('docs', () => {
     expect(deploy).toContain('chmod 600');
     expect(deploy).toContain('Node 24');
     expect(deploy).toContain('DNS A 记录');
-    expect(deploy).toContain('TBD');
+    expect(deploy).toContain('https://shop-ai.dycxy.shop');
   });
 
   it('DELIVERY has features, acceptance checklist, embed snippet and acceptance results', () => {
