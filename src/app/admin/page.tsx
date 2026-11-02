@@ -37,7 +37,7 @@ export default function AdminDashboardPage() {
       href: '/admin/copywriting',
       icon: Sparkles,
       title: t('nav.copywriting'),
-      description: t('app.tagline'),
+      description: t('admin.copywritingCardDesc'),
     },
     {
       href: '/admin/conversations',
