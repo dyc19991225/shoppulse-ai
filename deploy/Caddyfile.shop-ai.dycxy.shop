@@ -16,6 +16,8 @@ shop-ai.dycxy.shop {
 	encode @not_sse zstd gzip
 
 	reverse_proxy 127.0.0.1:8802 {
+		# Next.js middleware builds absolute redirects from its bind address; rewrite to the public origin.
+		header_down Location "^https?://(localhost|127\.0\.0\.1):8802" "https://shop-ai.dycxy.shop"
 		flush_interval -1
 	}
 

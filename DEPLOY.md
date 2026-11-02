@@ -1,7 +1,7 @@
 # 部署指南 — ShopPulse AI on zz
 
-> **状态：尚未部署。** 生产部署与域名需用户确认；下方步骤已在 box 上演练构建与打包，但未在 zz 上执行。
-> 线上地址：**TBD**
+> **状态：已部署（2026-11-02 10:56 UTC+8，commit 679d7ca）。**
+> 线上地址：**https://shop-ai.dycxy.shop**
 
 目标服务器 **zz**（`192.74.249.13`，2 核 / 1.9G + 1G swap）。同一台机器上已运行：
 
@@ -158,6 +158,7 @@ shop-ai.dycxy.shop {
 	encode @not_sse zstd gzip
 
 	reverse_proxy 127.0.0.1:8802 {
+		header_down Location "^https?://(localhost|127\.0\.0\.1):8802" "https://shop-ai.dycxy.shop"
 		flush_interval -1
 	}
 
@@ -170,7 +171,7 @@ shop-ai.dycxy.shop {
 }
 ```
 
-`flush_interval -1` 关闭反向代理缓冲，SSE 增量才能实时到达浏览器；同时跳过对 `/api/widget/chat` 的压缩。
+`header_down Location` 把 Next.js middleware 基于监听地址生成的绝对跳转（`https://localhost:8802/login`）改写为公网域名。`flush_interval -1` 关闭反向代理缓冲，SSE 增量才能实时到达浏览器；同时跳过对 `/api/widget/chat` 的压缩。
 
 Caddy 自动为 `shop-ai.dycxy.shop` 申请 Let's Encrypt 证书 —— 前提是 DNS A 记录已生效、80/443 可从公网访问。若证书签发失败，先查 DNS 与防火墙，**不要**删除现有站点的证书配置。
 
@@ -272,4 +273,4 @@ sudo systemctl start shoppulse-ai
 - [ ] 后台登录、站点允许域名、嵌入代码正确
 - [ ] 备份 timer 已启用，手动备份与恢复演练通过
 
-**线上 URL：TBD（待用户确认部署后填写）。**
+**线上 URL：https://shop-ai.dycxy.shop**（2026-11-02 部署）。
