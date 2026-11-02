@@ -45,3 +45,4 @@
 - 2026-11-02 12:47 (UTC+8) 本地两用户端到端（standalone 构建 + 临时库 + CLI 建 alice/bob，mock LLM）：16/16 通过——同 SKU 可跨用户；B 列表看不到 A 的知识库/商品/会话；B 猜 A 的知识库/商品/站点 ID（含 admin 的站点 1）GET/PUT/DELETE 均 404；挂件 B 站点只返回 Bob 商品与价格；disable 后旧会话与重新登录均 401。（重复跑会因 A 自身 SKU 冲突出现预期内的 409，非缺陷。）
 - 2026-11-02 12:50 (UTC+8) Codex（gpt-6-luna, low）审查多用户改动一次：4 条——High 迁移 v2 重建 products 后 copy_history 外键目标需验证；Medium ensureDefaultSite 全局取首个站点；Medium 禁用/无凭据 bootstrap 用户跳过 dummy scrypt（时序可区分）；Low 会话详情消息计数未按 owner。交给 Claude Code 修复。
 - 2026-11-02 13:03 (UTC+8) M4 修复（Claude Code）：#1 非缺陷（SQLite rename 后外键仍指向 products，已加测试）；#2 ensureDefaultSite 改为按 admin 查找；#3 开发态明文 ADMIN_PASSWORD 路径补 dummy scrypt，所有失败路径恰好一次 scrypt（spy 测试）；#4 会话详情消息计数按 owner。测试 426/426，tsc、build 通过。多用户 v0.2 完成，待批准部署。
+- 2026-11-02 13:41 (UTC+8) F1 报表汇总（/admin/reports + summary/summary.csv，按用户、补零、空状态）与 F2 快捷回复（迁移 v3：quick_replies + conversations.tags/note + sites.welcome_message）完成（Claude Code）。测试 444/444，build 通过。改版前截图存 screenshots/before-*.png。

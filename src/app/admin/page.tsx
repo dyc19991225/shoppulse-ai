@@ -1,6 +1,15 @@
 import Link from 'next/link';
 import { cookies } from 'next/headers';
-import { BookOpen, ExternalLink, MessagesSquare, Package, Settings, Sparkles } from 'lucide-react';
+import {
+  BarChart3,
+  BookOpen,
+  ExternalLink,
+  MessageSquareText,
+  MessagesSquare,
+  Package,
+  Settings,
+  Sparkles,
+} from 'lucide-react';
 import { getRequestTranslator } from '@/lib/i18n/server';
 import { listSites } from '@/lib/db';
 import { getDb } from '@/lib/db-runtime';
@@ -50,6 +59,18 @@ export default async function AdminDashboardPage() {
       icon: MessagesSquare,
       title: t('nav.conversations'),
       description: t('conversations.subtitle'),
+    },
+    {
+      href: '/admin/reports',
+      icon: BarChart3,
+      title: t('nav.reports'),
+      description: t('admin.reportsCardDesc'),
+    },
+    {
+      href: '/admin/quick-replies',
+      icon: MessageSquareText,
+      title: t('nav.quickReplies'),
+      description: t('admin.quickRepliesCardDesc'),
     },
     {
       href: '/admin/sites',

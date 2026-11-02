@@ -75,11 +75,11 @@ function count(db: DB, sql: string, ...params: unknown[]): number {
   return (db.prepare(sql).get(...params) as { count: number }).count;
 }
 
-describe('schema v1 -> v2 migration', () => {
+describe('schema v1 -> current migration', () => {
   it('upgrades a populated v1 database in place', () => {
     const db = openDb({ dbPath: createPopulatedV1(), seedDefaultSite: false });
 
-    expect(db.pragma('user_version', { simple: true })).toBe(2);
+    expect(db.pragma('user_version', { simple: true })).toBe(3);
     // Foreign key enforcement is restored and the rebuild left nothing broken.
     expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
     expect(db.pragma('foreign_key_check')).toEqual([]);
@@ -239,7 +239,7 @@ describe('schema v1 -> v2 migration', () => {
     first.close();
 
     const second = openDb({ dbPath, seedDefaultSite: false });
-    expect(second.pragma('user_version', { simple: true })).toBe(2);
+    expect(second.pragma('user_version', { simple: true })).toBe(3);
     expect(count(second, 'SELECT COUNT(*) AS count FROM users')).toBe(1);
     expect(count(second, 'SELECT COUNT(*) AS count FROM products')).toBe(2);
     second.close();

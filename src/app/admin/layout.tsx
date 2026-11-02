@@ -35,6 +35,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     products: t('nav.products'),
     copywriting: t('nav.copywriting'),
     conversations: t('nav.conversations'),
+    reports: t('nav.reports'),
+    quickReplies: t('nav.quickReplies'),
     sites: t('nav.sites'),
     logout: t('common.logout'),
     demo: t('admin.viewDemo'),

@@ -61,11 +61,11 @@ describe('migrations & default site', () => {
       .all()
       .map((row) => (row as { name: string }).name);
 
-    for (const table of ['users', 'kb_entries', 'products', 'sites', 'conversations', 'messages', 'copy_history']) {
+    for (const table of ['users', 'kb_entries', 'products', 'sites', 'conversations', 'messages', 'copy_history', 'quick_replies']) {
       expect(tables).toContain(table);
     }
 
-    expect(db.pragma('user_version', { simple: true })).toBe(2);
+    expect(db.pragma('user_version', { simple: true })).toBe(3);
     expect(getUserById(db, 1)).toMatchObject({
       username: 'admin',
       role: 'admin',
@@ -86,7 +86,7 @@ describe('migrations & default site', () => {
       first.close();
 
       const second = openDb({ dbPath });
-      expect(second.pragma('user_version', { simple: true })).toBe(2);
+      expect(second.pragma('user_version', { simple: true })).toBe(3);
       expect(listSites(second, OWNER)).toHaveLength(1);
       ensureDefaultSite(second);
       expect(listSites(second, OWNER)).toHaveLength(1);

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
+  BarChart3,
   BookOpen,
   LayoutDashboard,
   LogOut,
@@ -25,6 +26,8 @@ export interface SidebarLabels {
   products: string;
   copywriting: string;
   conversations: string;
+  reports: string;
+  quickReplies: string;
   sites: string;
   logout: string;
   demo: string;
@@ -38,6 +41,8 @@ const NAV = [
   { href: '/admin/products', key: 'products', icon: Package },
   { href: '/admin/copywriting', key: 'copywriting', icon: Sparkles },
   { href: '/admin/conversations', key: 'conversations', icon: MessagesSquare },
+  { href: '/admin/quick-replies', key: 'quickReplies', icon: MessageSquareText },
+  { href: '/admin/reports', key: 'reports', icon: BarChart3 },
   { href: '/admin/sites', key: 'sites', icon: Settings },
 ] as const;
 

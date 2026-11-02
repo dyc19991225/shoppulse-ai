@@ -135,7 +135,32 @@ const MIGRATION_V2_SQL = `
   CREATE INDEX idx_sites_owner ON sites(owner_id);
 `;
 
-const MIGRATIONS: string[] = [V1_SCHEMA_SQL, MIGRATION_V2_SQL];
+/**
+ * v3 adds the quick-reply library plus the conversation/site columns that the
+ * merchant workspace ships together (tags, internal note, welcome message), so
+ * existing deployments upgrade once.
+ */
+const MIGRATION_V3_SQL = `
+  CREATE TABLE quick_replies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_id INTEGER NOT NULL REFERENCES users(id),
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  ALTER TABLE conversations ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE conversations ADD COLUMN note TEXT NOT NULL DEFAULT '';
+  ALTER TABLE sites ADD COLUMN welcome_message TEXT NOT NULL DEFAULT '';
+
+  CREATE INDEX idx_quick_replies_owner ON quick_replies(owner_id);
+`;
+
+const MIGRATIONS: string[] = [V1_SCHEMA_SQL, MIGRATION_V2_SQL, MIGRATION_V3_SQL];
+
+/** v1 + v2 schema; exported so migration tests can build a populated v2 database. */
+export const V2_SCHEMA_SQL = `${V1_SCHEMA_SQL}\n${MIGRATION_V2_SQL}`;
 
 export interface OpenDbOptions {
   /** SQLite path; `:memory:` is supported. Defaults to env SHOPPULSE_DB_PATH. */
@@ -373,7 +398,8 @@ export interface SiteInput {
   rateLimitPerMin: number;
 }
 
-export type MessageRole = 'user' | 'assistant' | 'system';
+/** `agent` is a human merchant reply (F3); reports already count it. */
+export type MessageRole = 'user' | 'assistant' | 'agent' | 'system';
 
 export interface Conversation {
   id: string;
@@ -1061,6 +1087,85 @@ export function getCopyHistory(db: DB, ownerId: number, id: string): CopyHistory
     .prepare('SELECT * FROM copy_history WHERE id = ? AND owner_id = ?')
     .get(id, ownerId) as Record<string, unknown> | undefined;
   return row ? mapCopyHistory(row) : null;
+}
+
+// ---------------------------------------------------------------------------
+// Quick replies repository (schema v3)
+// ---------------------------------------------------------------------------
+
+export const QUICK_REPLY_TITLE_MAX = 100;
+/** Spec: content ≤ 2000. */
+export const QUICK_REPLY_CONTENT_MAX = 2000;
+
+export interface QuickReply {
+  id: number;
+  title: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface QuickReplyInput {
+  title: string;
+  content: string;
+}
+
+function mapQuickReply(row: Row): QuickReply {
+  return {
+    id: Number(row.id),
+    title: String(row.title),
+    content: String(row.content),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
+
+export function listQuickReplies(db: DB, ownerId: number): QuickReply[] {
+  return (
+    db
+      .prepare('SELECT * FROM quick_replies WHERE owner_id = ? ORDER BY updated_at DESC, id DESC')
+      .all(ownerId) as Row[]
+  ).map(mapQuickReply);
+}
+
+export function getQuickReply(db: DB, ownerId: number, id: number): QuickReply | null {
+  const row = db
+    .prepare('SELECT * FROM quick_replies WHERE id = ? AND owner_id = ?')
+    .get(id, ownerId) as Row | undefined;
+  return row ? mapQuickReply(row) : null;
+}
+
+export function createQuickReply(db: DB, ownerId: number, input: QuickReplyInput): QuickReply {
+  const now = nowIso();
+  const info = db
+    .prepare(
+      `INSERT INTO quick_replies (owner_id, title, content, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
+    .run(ownerId, input.title, input.content, now, now);
+  return getQuickReply(db, ownerId, Number(info.lastInsertRowid))!;
+}
+
+export function updateQuickReply(
+  db: DB,
+  ownerId: number,
+  id: number,
+  input: Partial<QuickReplyInput>,
+): QuickReply | null {
+  const existing = getQuickReply(db, ownerId, id);
+  if (!existing) return null;
+  const merged = { ...existing, ...input };
+  db.prepare(
+    `UPDATE quick_replies SET title = ?, content = ?, updated_at = ? WHERE id = ? AND owner_id = ?`,
+  ).run(merged.title, merged.content, nowIso(), id, ownerId);
+  return getQuickReply(db, ownerId, id);
+}
+
+export function deleteQuickReply(db: DB, ownerId: number, id: number): boolean {
+  return (
+    db.prepare('DELETE FROM quick_replies WHERE id = ? AND owner_id = ?').run(id, ownerId).changes >
+    0
+  );
 }
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
