@@ -1,15 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
-import {
-  addMessage,
-  getConversation,
-  setConversationHandled,
-  touchConversation,
-} from '@/lib/db';
 import { getDb } from '@/lib/db-runtime';
 import { jsonError, readJsonObject } from '@/lib/api';
 import { requireAdminApi } from '@/lib/auth';
 import { validateAgentMessageContent } from '@/lib/inbox';
+import { addAgentReply } from '@/lib/inbox-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,18 +33,13 @@ export async function POST(request: NextRequest, { params }: Params): Promise<Ne
   }
 
   const db = getDb();
-  if (!getConversation(db, auth.user.id, params.id)) return jsonError(404, 'not_found');
-
-  const message = addMessage(db, auth.user.id, {
+  const message = addAgentReply(db, auth.user.id, {
     id: randomUUID(),
     conversationId: params.id,
-    role: 'agent',
     content,
+    markHandled: body.markHandled,
   });
-  touchConversation(db, auth.user.id, params.id);
-  if (body.markHandled === true) {
-    setConversationHandled(db, auth.user.id, params.id, true);
-  }
+  if (!message) return jsonError(404, 'not_found');
 
   return NextResponse.json({ ok: true, item: message }, { status: 201 });
 }

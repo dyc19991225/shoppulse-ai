@@ -49,3 +49,5 @@
 - 2026-11-02 15:08 (UTC+8) F3 会话工作台（人工回复 agent 消息、挂件 5 秒轮询 /api/widget/messages、标签/备注/按标签筛选、快捷回复选择器）+ F4 加入知识库 + F5 站点欢迎语 完成（Claude Code）。测试 481/481，build 通过。（14:26 起 cc-wb 默认模型改为 glm-5.3，本批仍为 deepseek-v4.1-flash。）
 - 2026-11-02 15:20 (UTC+8) R1a 后台改版（Codex gpt-6-luna low，一次）：分组侧栏（工作台/对话/知识与商品/营销/设置）、顶栏（页面标题+用户/角色）、报表页 KPI 图标卡与趋势卡头部区间切换、概览与登录页样式。会话页双栏未做。Codex 沙箱内 user-cli 测试因无法 spawn 报错，本机复跑 481/481 通过，build 通过。
 - 2026-11-02 15:32 (UTC+8) R1b 落地页改版（Codex low，一次）：sticky 导航、双 CTA（/demo、/login）、自绘聊天+无数值报表示意、七个真实模块卡片、三步流程、嵌入代码、FAQ、CTA 条与页脚；/demo 头部统一。无客户 logo/数字/评分。481/481 通过（user-cli 失败仅出现在 Codex 沙箱），build 通过。
+- 2026-11-02 15:58 (UTC+8) R2 v0.3 Codex low 只读审查（0f4f0ab..HEAD）：High1 widget/messages 未知 site key 在 CORS 前返回可探测；Medium2 坐席回复插入与标记已处理非原子；Medium3 报表“今日待处理转人工”实为全部积压。Low 无；未发现 XSS/CSV 注入，v3 迁移安全。交 Claude Code 修复。
+- 2026-11-02 16:49 (UTC+8) R2 修复（glm-5.3 首次运行停滞被父代理终止；改用 deepseek-v4-pro 逐项修复）：High1 widget/messages 未知站点/错误来源/错误访客/未知会话统一 404 not_found；Medium2 坐席回复+触达+标记已处理放入单一事务（src/lib/inbox-server.ts，含回滚测试；拆出服务端模块修复了客户端组件引入 better-sqlite3 导致的 build 失败）；Medium3 “待处理转人工”标注为当前积压。483/483 通过，tsc、build 通过。v0.3 审查无遗留项。

@@ -164,10 +164,10 @@ describe('GET /api/widget/messages', () => {
       expect((await response.json()).error).toBe('not_found');
     }
 
-    // An unknown site key is rejected like the config endpoint does.
+    // An unknown site key is indistinguishable from the other failures.
     const unknown = messagesGet(request({ ...QUERY, site_key: 'unknown' }));
     expect(unknown.status).toBe(404);
-    expect((await unknown.json()).error).toBe('unknown_site');
+    expect((await unknown.json()).error).toBe('not_found');
   });
 
   it("never reveals another owner's conversation, even to the right site key shape", async () => {
@@ -207,7 +207,7 @@ describe('GET /api/widget/messages', () => {
         { origin: 'https://a.example.com' },
       ),
     );
-    expect(viaSiteB.status).toBe(403);
+    expect(viaSiteB.status).toBe(404);
 
     // B's owner can still poll B's conversation from B's origin.
     const ownResponse = messagesGet(
@@ -232,7 +232,7 @@ describe('GET /api/widget/messages', () => {
   it('rejects foreign origins before reading anything', async () => {
     seedConversation();
     const response = messagesGet(request(QUERY, { origin: 'https://evil.example.com' }));
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(404);
     expect(response.headers.get('access-control-allow-origin')).toBeNull();
 
     // A request without an Origin is not a browser cross-site request; the

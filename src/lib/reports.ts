@@ -30,7 +30,7 @@ export interface ReportKpis {
   handoffs: number;
   handoffRate: number;
   handled: number;
-  /** Current backlog: handoff conversations that are still unhandled. */
+  /** All-time backlog: handoff conversations still unhandled (not scoped to the report range). */
   pendingHandoffs: number;
   copiesGenerated: number;
   kbEntries: number;
@@ -41,6 +41,7 @@ export interface ReportKpis {
 
 export interface ReportToday {
   conversations: number;
+  /** All-time backlog, not "today": same value as ReportKpis.pendingHandoffs. */
   pendingHandoffs: number;
 }
 

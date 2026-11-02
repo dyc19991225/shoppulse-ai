@@ -12,14 +12,17 @@ import {
   createSite,
   getConversation,
   listMessages,
+  setConversationHandled,
   type DB,
 } from '@/lib/db';
+import * as dbModule from '@/lib/db';
 import { resetDbCache } from '@/lib/db-runtime';
 import {
   buildKbDraftFromConversation,
   normalizeTags,
   validateAgentMessageContent,
 } from '@/lib/inbox';
+import { addAgentReply } from '@/lib/inbox-server';
 import { createTempDb, type TempDb } from './helpers/tempdb';
 import { adminSessionCookie, TEST_SESSION_SECRET } from './helpers/auth';
 
@@ -244,6 +247,49 @@ describe('POST /api/admin/conversations/[id]/messages', () => {
     );
     expect(own.status).toBe(201);
     expect((await own.json()).item.role).toBe('agent');
+  });
+});
+
+describe('addAgentReply transaction (F3)', () => {
+  it('rolls back the agent message when the handled update throws', () => {
+    seedTwoOwners();
+    expect(listMessages(db(), USER_A, 'conv-a')).toHaveLength(2);
+    const before = getConversation(db(), USER_A, 'conv-a')!;
+
+    const spy = vi
+      .spyOn(dbModule, 'setConversationHandled')
+      .mockImplementation(() => {
+        throw new Error('boom');
+      });
+
+    expect(() =>
+      addAgentReply(db(), USER_A, {
+        id: 'agent-boom',
+        conversationId: 'conv-a',
+        content: '已解决',
+        markHandled: true,
+      }),
+    ).toThrow('boom');
+
+    spy.mockRestore();
+
+    // The insert and touch were rolled back, so nothing was written.
+    expect(listMessages(db(), USER_A, 'conv-a')).toHaveLength(2);
+    const after = getConversation(db(), USER_A, 'conv-a')!;
+    expect(after.handled).toBe(false);
+    expect(after.lastAt).toBe(before.lastAt);
+  });
+
+  it('returns null for another owner and writes nothing', () => {
+    seedTwoOwners();
+    expect(
+      addAgentReply(db(), USER_B, {
+        id: 'agent-x',
+        conversationId: 'conv-a',
+        content: 'hijack',
+      }),
+    ).toBeNull();
+    expect(listMessages(db(), USER_A, 'conv-a')).toHaveLength(2);
   });
 });
 

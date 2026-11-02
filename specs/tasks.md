@@ -29,5 +29,5 @@
 - [x] F3 会话工作台：人工回复（agent 消息，挂件轮询接收）、会话标签与备注、按标签筛选 + 测试。
 - [x] F4 会话消息一键加入知识库。
 - [x] F5 站点欢迎语（挂件展示）。
-- [ ] R1 Codex 改版落地页与后台（参考 SaleSmartly 布局风格，不用其文案/素材）+ 截图 screenshots/。
-- [ ] R2 Codex 审查一次 + Claude Code 修复。
+- [x] R1 Codex 改版落地页与后台（参考 SaleSmartly 布局风格，不用其文案/素材）+ 截图 screenshots/。
+- [x] R2 Codex 审查一次 + Claude Code 修复。

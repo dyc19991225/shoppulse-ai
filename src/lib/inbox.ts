@@ -1,13 +1,17 @@
 import type { Message } from './db';
 
 /**
- * F3 inbox rules: agent replies and conversation tags/note.
+ * F3 inbox rules: conversation tags/note and agent-reply limits.
  *
  * Validation lives here (not in the route) so the API and the admin UI share
  * one definition of the limits from specs/merchant-features.md:
  * - agent reply content: 1–2000 characters after trimming
  * - tags: ≤10 unique entries, each 1–20 characters after trimming
  * - note: ≤2000 characters
+ *
+ * This module is shared with client components, so it must not import
+ * better-sqlite3 (src/lib/db.ts). Server-only database writes live in
+ * src/lib/inbox-server.ts.
  */
 
 export const AGENT_MESSAGE_MAX_LENGTH = 2000;

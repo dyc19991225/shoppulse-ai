@@ -54,11 +54,11 @@ export function GET(request: NextRequest): NextResponse {
 
   const db = getDb();
   const site = getSiteByKey(db, siteKey);
-  if (!site) return NextResponse.json({ error: 'unknown_site' }, { status: 404 });
+  if (!site) return NextResponse.json({ error: 'not_found' }, { status: 404 });
 
   const cors = checkCors(request.headers.get('origin'), site.allowedOrigins);
   if (!cors.allowed) {
-    return NextResponse.json({ error: 'origin_not_allowed' }, { status: 403 });
+    return NextResponse.json({ error: 'not_found' }, { status: 404 });
   }
 
   const limit = checkWidgetRateLimit(site.siteKey, clientIp(request), site.rateLimitPerMin);
