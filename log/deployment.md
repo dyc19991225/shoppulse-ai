@@ -72,3 +72,11 @@
 - 17:30 新增 `HANDOFF.md`（接手提示词 + 完整交接文档，无密钥），复制到 zz `/root/shoppulse-ai-HANDOFF.md`（600）和 Windows 桌面 `shoppulse-HANDOFF.md`；清理 zz `/tmp` 部署脚本。
 - 17:31 开始制作中文字幕演示视频（本地 3200 端口 + 示例数据 + Mock 模式，由 Claude Code 执行录制）。
 - 18:13 演示视频完成：Claude Code 本地 3200 端口 + 全新 DB（demo/demo2 示例账号，密码仅存 0600 文件，未出现在画面）+ 虚构示例数据「云杉生活馆」，Mock 模式录制 10 个场景（落地页→登录→CSV 导入→知识库→挂件问答/价格/转人工→收件箱标签+快捷回复+人工回复→四平台文案→报表→多用户隔离→X 关闭挂件）；放慢 1.35 倍至 2:16，1280x720 H.264；中文 SRT + Noto Sans CJK SC 烧录版。存于 docs/demo/，未推送 GitHub。
+
+## 2026-11-02 19:30（UTC+8）演示视频 v2 重录
+- 在 Xvfb :99（1280x720）上用有界面 Chrome 实录，ffmpeg x11grab 30fps，不做人为慢放；本地 3200 端口接真实模型（WorkBuddy 网关 deepseek-v4.1-flash），未开启演示模式。
+- 示例店铺「云杉生活馆」预置了知识库和商品；问「保温杯多少钱」时会显示商品卡片。
+- 修复挂件问题：对话变长后，商品卡片那一行会被 flex 挤压成 0 高度（`.products` 加上 `flex-shrink:0`，并补了测试）。线上 zz 尚未部署这个修复。
+- 关闭 Chrome 翻译弹窗后重录了一次；中文配音用 edge-tts zh-CN-XiaoxiaoNeural，共 10 段旁白；字幕按旁白时间轴生成，烧录字体为 Noto Sans CJK SC。
+- 产出：docs/demo/shoppulse-demo.mp4（138.3 秒，30fps，AAC 48kHz，7.2MB）、shoppulse-demo-zh.srt、shoppulse-demo-zh-subtitled.mp4（7.7MB）；带字幕版已复制到 Windows 桌面。
+- 已知问题：模型回复里的 Markdown 加粗（**…**）在挂件里显示为原始星号。
