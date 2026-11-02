@@ -11,11 +11,12 @@ import {
   isCopyPlatform,
   isCopyTone,
   parsePlatformOutput,
+  PLATFORM_MAX_TOKENS,
   splitSellingPoints,
 } from '@/lib/copywriting';
 import { createProduct, getProduct, listCopyHistory, type DB } from '@/lib/db';
 import { MockProvider } from '@/lib/llm/mock';
-import type { ChatRequest, CompletionRequest, LlmProvider } from '@/lib/llm/types';
+import { LlmError, type ChatRequest, type CompletionRequest, type LlmProvider } from '@/lib/llm/types';
 import { resetDbCache } from '@/lib/db-runtime';
 import { resetProviderCache } from '@/lib/llm';
 import { GET as historyGet, POST as copywritePost } from '@/app/api/admin/copywrite/route';
@@ -118,6 +119,32 @@ describe('copywriting helpers', () => {
     expect(parsePlatformOutput('   ')).toEqual({ title: '', body: '' });
   });
 
+  it('salvages truncated JSON instead of returning raw JSON as the body', () => {
+    // Cut mid-body, as when a reasoning model exhausts max_tokens.
+    const truncated = '{"title":"厨房好物","body":"洗碗最怕油腻腻，\\n竹纤维吸油不挂油，冲一冲就清爽';
+    const parsed = parsePlatformOutput(truncated);
+    expect(parsed.title).toBe('厨房好物');
+    expect(parsed.body).toBe('洗碗最怕油腻腻，\n竹纤维吸油不挂油，冲一冲就清爽');
+    expect(parsed.body).not.toContain('{"title"');
+
+    // No closing brace at all — still recovered.
+    expect(parsePlatformOutput('{"title":"T","body":"B')).toEqual({ title: 'T', body: 'B' });
+
+    // Truncated before the body even started: body is empty, never raw JSON.
+    const titleOnly = parsePlatformOutput('{"title":"只有标题"');
+    expect(titleOnly).toEqual({ title: '只有标题', body: '' });
+    expect(parsePlatformOutput('{"title":"x"')?.body ?? '').not.toContain('{');
+
+    // Garbage JSON-ish output is a failure, not the published body.
+    expect(parsePlatformOutput('{"foo": 1, "bar": [2, 3')).toEqual({ title: '', body: '' });
+  });
+
+  it('parses fenced JSON with leading prose and trailing notes', () => {
+    expect(
+      parsePlatformOutput('好的，以下是文案：\n```json\n{"title":"T","body":"B"}\n```\n希望有帮助'),
+    ).toEqual({ title: 'T', body: 'B' });
+  });
+
   it('builds platform-specific prompts with the real price and language rule', () => {
     const product = sampleProduct();
     const zh = buildPlatformPrompt({
@@ -130,6 +157,8 @@ describe('copywriting helpers', () => {
     });
     expect(zh.system).toContain('抖音');
     expect(zh.system).toContain('JSON');
+    expect(zh.system).toContain('不要编造亲身体验');
+    expect(zh.system).toContain('检测结果');
     expect(zh.user).toContain('¥29.90');
     expect(zh.user).toContain('年轻妈妈');
     expect(zh.user).toContain('可机洗');
@@ -144,6 +173,7 @@ describe('copywriting helpers', () => {
     });
     expect(en.system).toContain('Write the copy in English');
     expect(en.system).toContain('E-commerce detail page');
+    expect(en.system).toContain('Never invent first-person');
   });
 });
 
@@ -252,10 +282,18 @@ describe('generateCopywriting', () => {
 
   it('keeps other platforms when a single generation fails', async () => {
     const product = sampleProduct();
-    const provider = new RecordingJsonProvider((call) => {
-      if (call === 1) throw new Error('boom');
-      return '{"title":"OK","body":"正常内容 ✅"}';
-    });
+    // xiaohongshu's provider call fails; moments succeeds.
+    const provider: LlmProvider = {
+      kind: 'openai',
+      model: 'test-model',
+      async *stream(): AsyncGenerator<string, void, unknown> {
+        yield '';
+      },
+      async complete(request) {
+        if (request.messages[1].content.includes('小红书')) throw new Error('boom');
+        return '{"title":"OK","body":"正常内容 ✅"}';
+      },
+    };
 
     const result = await generateCopywriting(db(), provider, {
       productId: product.id,
@@ -267,8 +305,43 @@ describe('generateCopywriting', () => {
     });
 
     const failed = result.outputs.find((output) => output.error);
-    expect(failed).toBeDefined();
+    expect(failed?.platform).toBe('xiaohongshu');
+    expect(failed?.error).toBe('generation_failed');
     expect(result.outputs.filter((output) => output.text).length).toBe(1);
+  });
+
+  it('does not add a second retry after a transport failure', async () => {
+    const product = sampleProduct();
+    let calls = 0;
+    const provider: LlmProvider = {
+      kind: 'openai',
+      model: 'test-model',
+      async *stream(): AsyncGenerator<string, void, unknown> {
+        yield '';
+      },
+      async complete(request) {
+        calls += 1;
+        if (request.messages[1].content.includes('朋友圈')) {
+          throw new LlmError('LLM request timed out', { retryable: true });
+        }
+        return '{"title":"T","body":"B ✅"}';
+      },
+    };
+
+    const result = await generateCopywriting(db(), provider, {
+      productId: product.id,
+      audience: '',
+      sellingPoints: [],
+      tone: 'lively',
+      platforms: ['moments', 'xiaohongshu'],
+      lang: 'zh',
+    });
+
+    // OpenAiProvider already retries transport errors once; copywriting adds none.
+    expect(calls).toBe(2);
+    expect(result.outputs.find((output) => output.platform === 'moments')!.error).toBe(
+      'generation_failed',
+    );
   });
 
   it('rejects requests whose selling points ask for deceptive claims', async () => {
@@ -284,6 +357,201 @@ describe('generateCopywriting', () => {
       }),
     ).rejects.toMatchObject({ code: 'content_blocked' });
     expect(listCopyHistory(db())).toHaveLength(0);
+  });
+
+  it('retries a truncated platform once with a larger token budget', async () => {
+    const product = sampleProduct();
+    let calls = 0;
+    const provider: LlmProvider = {
+      kind: 'openai',
+      model: 'test-model',
+      async *stream(): AsyncGenerator<string, void, unknown> {
+        yield '';
+      },
+      async complete(request) {
+        calls += 1;
+        // First attempt: reasoning model burned the budget mid-object.
+        if (calls === 1) return '{"title":"标题","body":"正文只写了一半';
+        expect(request.maxTokens).toBeGreaterThan(900);
+        return '{"title":"标题","body":"完整正文 ✅"}';
+      },
+    };
+
+    const result = await generateCopywriting(db(), provider, {
+      productId: product.id,
+      audience: '',
+      sellingPoints: [],
+      tone: 'lively',
+      platforms: ['moments'],
+      lang: 'zh',
+    });
+
+    expect(calls).toBe(2);
+    expect(result.outputs[0]).toMatchObject({
+      platform: 'moments',
+      title: '标题',
+      body: '完整正文 ✅',
+      blocked: false,
+    });
+    expect(result.outputs[0].error).toBeUndefined();
+  });
+
+  it('uses a platform-sized token budget and doubles it only for the retry', async () => {
+    const product = sampleProduct();
+    const budgets: number[] = [];
+    const provider: LlmProvider = {
+      kind: 'openai',
+      model: 'test-model',
+      async *stream(): AsyncGenerator<string, void, unknown> {
+        yield '';
+      },
+      async complete(request) {
+        budgets.push(request.maxTokens ?? 0);
+        return '{"title":"T","body":"B ✅"}';
+      },
+    };
+
+    await generateCopywriting(db(), provider, {
+      productId: product.id,
+      audience: '',
+      sellingPoints: [],
+      tone: 'lively',
+      platforms: ['douyin'],
+      lang: 'zh',
+    });
+
+    expect(budgets).toEqual([PLATFORM_MAX_TOKENS.douyin]);
+    expect(PLATFORM_MAX_TOKENS.douyin).toBeGreaterThanOrEqual(2000);
+    for (const platform of COPY_PLATFORMS) {
+      expect(PLATFORM_MAX_TOKENS[platform]).toBeGreaterThanOrEqual(1800);
+    }
+  });
+
+  it('retries once without JSON mode when the gateway rejects it', async () => {
+    const product = sampleProduct();
+    let calls = 0;
+    const provider: LlmProvider = {
+      kind: 'openai',
+      model: 'test-model',
+      async *stream(): AsyncGenerator<string, void, unknown> {
+        yield '';
+      },
+      async complete(request) {
+        calls += 1;
+        if (request.json) throw new LlmError('bad response_format', { status: 400 });
+        return '{"title":"T","body":"B ✅"}';
+      },
+    };
+
+    const result = await generateCopywriting(db(), provider, {
+      productId: product.id,
+      audience: '',
+      sellingPoints: [],
+      tone: 'lively',
+      platforms: ['douyin'],
+      lang: 'zh',
+    });
+
+    expect(calls).toBe(2);
+    expect(result.outputs[0].text).toContain('B');
+  });
+
+  it('never publishes raw JSON when both attempts are unparsable', async () => {
+    const product = sampleProduct();
+    const provider: LlmProvider = {
+      kind: 'openai',
+      model: 'test-model',
+      async *stream(): AsyncGenerator<string, void, unknown> {
+        yield '';
+      },
+      async complete(request) {
+        return request.messages[1].content.includes('抖音') ? '{"foo":' : '{"title":"T","body":"B ✅"}';
+      },
+    };
+
+    const result = await generateCopywriting(db(), provider, {
+      productId: product.id,
+      audience: '',
+      sellingPoints: [],
+      tone: 'lively',
+      platforms: ['douyin', 'moments'],
+      lang: 'zh',
+    });
+
+    const douyin = result.outputs.find((output) => output.platform === 'douyin')!;
+    expect(douyin.error).toBe('generation_failed');
+    expect(douyin.text).toBe('');
+    expect(result.outputs.find((output) => output.platform === 'moments')!.text).not.toBe('');
+  });
+
+  it('does not publish a too-short salvaged fragment when both attempts truncate', async () => {
+    const product = sampleProduct();
+    const provider: LlmProvider = {
+      kind: 'openai',
+      model: 'test-model',
+      async *stream(): AsyncGenerator<string, void, unknown> {
+        yield '';
+      },
+      async complete(request) {
+        return request.messages[1].content.includes('抖音')
+          ? '{"title":"标题","body":"正文'
+          : '{"title":"T","body":"B ✅"}';
+      },
+    };
+
+    const result = await generateCopywriting(db(), provider, {
+      productId: product.id,
+      audience: '',
+      sellingPoints: [],
+      tone: 'lively',
+      platforms: ['douyin', 'moments'],
+      lang: 'zh',
+    });
+
+    expect(result.outputs.find((output) => output.platform === 'douyin')!.error).toBe(
+      'generation_failed',
+    );
+  });
+
+  it('logs failure reasons without prompt content or secrets', async () => {
+    const product = sampleProduct();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const provider: LlmProvider = {
+      kind: 'openai',
+      model: 'test-model',
+      async *stream(): AsyncGenerator<string, void, unknown> {
+        yield '';
+      },
+      async complete(request) {
+        if (request.messages[1].content.includes('朋友圈')) {
+          throw new LlmError('HTTP 500 from gateway', { status: 500 });
+        }
+        return '{"title":"T","body":"B ✅"}';
+      },
+    };
+
+    try {
+      const result = await generateCopywriting(db(), provider, {
+        productId: product.id,
+        audience: '年轻妈妈',
+        sellingPoints: ['吸油不挂油'],
+        tone: 'lively',
+        platforms: ['moments', 'xiaohongshu'],
+        lang: 'zh',
+      });
+
+      expect(result.outputs.find((output) => output.platform === 'moments')!.error).toBe(
+        'generation_failed',
+      );
+      const logged = warn.mock.calls.flat().map((arg) => JSON.stringify(arg)).join(' ');
+      expect(logged).toContain('provider_error');
+      expect(logged).toContain('moments');
+      expect(logged).not.toContain('吸油不挂油');
+      expect(logged).not.toContain('年轻妈妈');
+      expect(logged).not.toContain('HTTP 500');
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('rejects unknown products', async () => {

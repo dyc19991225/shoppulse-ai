@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GET } from '@/app/api/health/route';
 
 const ENV_KEYS = [
@@ -7,12 +7,16 @@ const ENV_KEYS = [
   'SHOPPULSE_REQUIRE_LLM',
 ] as const;
 
-afterEach(() => {
+// The developer shell may export a real key (e.g. for T12 gateway checks);
+// these tests assert on a clean environment.
+function clearLlmEnv(): void {
   vi.unstubAllEnvs();
-  for (const key of ENV_KEYS) {
-    delete process.env[key];
-  }
-});
+  for (const key of ENV_KEYS) delete process.env[key];
+}
+
+beforeEach(clearLlmEnv);
+
+afterEach(clearLlmEnv);
 
 describe('GET /api/health', () => {
   it('reports mock mode when no API key is configured', async () => {

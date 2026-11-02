@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { addCopyHistory, getProduct, type DB, type Product } from './db';
 import { checkOutputSafety, checkRequestSafety, sanitizeAdLawText } from './safety';
 import type { Locale } from './i18n';
-import type { LlmProvider } from './llm/types';
+import { LlmError, type LlmProvider } from './llm/types';
 import {
   COPY_PLATFORMS,
   COPY_TONES,
@@ -107,56 +107,170 @@ export function splitSellingPoints(value: string): string[] {
     .slice(0, 10);
 }
 
+interface ParsedPlatformOutput {
+  title: string;
+  body: string;
+  /** json = strict parse, salvaged = repaired/truncated JSON, text = plain text. */
+  kind: 'json' | 'salvaged' | 'text' | 'invalid' | 'empty';
+  /** True when the model output stopped mid-JSON (likely token-limit truncation). */
+  partial: boolean;
+}
+
 /**
- * Parses the model response. Prefers strict JSON, tolerates fenced JSON and
- * plain text (first short line -> title, remainder -> body).
+ * Parses the model response. Prefers strict JSON, then fenced JSON, then
+ * truncated JSON (salvaging any complete title/body prefix), and finally plain
+ * text (first short line -> title, remainder -> body). Raw JSON is never
+ * returned as body: an unrepairable JSON fragment is treated as a failure so
+ * the caller can retry or report generation_failed.
  */
 export function parsePlatformOutput(raw: string): { title: string; body: string } {
-  const text = raw.trim();
-  if (!text) return { title: '', body: '' };
+  const parsed = parsePlatformOutputDetailed(raw);
+  return { title: parsed.title, body: parsed.body };
+}
 
+function parsePlatformOutputDetailed(raw: string): ParsedPlatformOutput {
+  const text = raw.trim();
+  if (!text) return { title: '', body: '', kind: 'empty', partial: false };
+
+  const fencedMatch = /```(?:json)?\s*([\s\S]*?)```/i.exec(text);
   const unfenced = text
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/\s*```$/, '')
     .trim();
 
   const candidates = [unfenced];
+  if (fencedMatch?.[1]?.trim()) candidates.push(fencedMatch[1].trim());
   const firstBrace = unfenced.indexOf('{');
   const lastBrace = unfenced.lastIndexOf('}');
   if (firstBrace !== -1 && lastBrace > firstBrace) {
     candidates.push(unfenced.slice(firstBrace, lastBrace + 1));
   }
+  if (firstBrace !== -1 && lastBrace <= firstBrace) {
+    candidates.push(unfenced.slice(firstBrace));
+  }
 
   for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate) as Record<string, unknown>;
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        const title =
-          firstString(parsed.title) ?? firstString(parsed.headline) ?? firstString(parsed.subject) ?? '';
-        const body =
-          firstString(parsed.body) ??
-          firstString(parsed.content) ??
-          firstString(parsed.text) ??
-          firstString(parsed.copy) ??
-          '';
-        if (title || body) return { title: title.trim(), body: body.trim() };
-      }
-    } catch {
-      // Try the next candidate.
+    const parsed = tryParseJsonObject(candidate);
+    if (parsed) {
+      const title =
+        firstString(parsed.title) ?? firstString(parsed.headline) ?? firstString(parsed.subject) ?? '';
+      const body =
+        firstText(parsed.body) ??
+        firstText(parsed.content) ??
+        firstText(parsed.text) ??
+        firstText(parsed.copy) ??
+        '';
+      if (title || body) return { title: title.trim(), body: body.trim(), kind: 'json', partial: false };
     }
+  }
+
+  // The model was cut off mid-object (reasoning models can exhaust max_tokens
+  // before emitting any content). Recover the string fields written so far.
+  const jsonSource = firstBrace !== -1 ? unfenced.slice(firstBrace) : unfenced;
+  const looksLikeJson = jsonSource.startsWith('{') || /"(?:title|body)"\s*:/.test(text);
+  if (looksLikeJson) {
+    const title = salvageJsonField(jsonSource, 'title');
+    const body =
+      salvageJsonField(jsonSource, 'body') ??
+      salvageJsonField(jsonSource, 'content') ??
+      salvageJsonField(jsonSource, 'text') ??
+      salvageJsonField(jsonSource, 'copy');
+    if (title || body) {
+      const closed = jsonSource.trimEnd().endsWith('}');
+      return {
+        title: (title?.value ?? '').trim(),
+        body: (body?.value ?? '').trim(),
+        kind: 'salvaged',
+        partial: !closed || Boolean(title && !title.closed) || Boolean(body && !body.closed),
+      };
+    }
+    return { title: '', body: '', kind: 'invalid', partial: true };
   }
 
   const lines = unfenced.split('\n').map((line) => line.trim());
   const firstLine = lines.find(Boolean) ?? '';
   if (firstLine.length > 0 && firstLine.length <= 40 && lines.length > 1) {
     const rest = lines.slice(lines.indexOf(firstLine) + 1).join('\n').trim();
-    if (rest) return { title: firstLine, body: rest };
+    if (rest) return { title: firstLine, body: rest, kind: 'text', partial: false };
   }
-  return { title: '', body: unfenced };
+  return { title: '', body: unfenced, kind: 'text', partial: false };
+}
+
+function tryParseJsonObject(candidate: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(candidate) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reads a possibly-unterminated JSON string value for `key`. Escapes are
+ * decoded (so truncated bodies keep their real newlines); a dangling escape or
+ * `\u` sequence is dropped.
+ */
+function salvageJsonField(
+  source: string,
+  key: string,
+): { value: string; closed: boolean } | null {
+  const match = new RegExp(`"${key}"\\s*:\\s*"`, 'i').exec(source);
+  if (!match) return null;
+  return decodeJsonStringPrefix(source, match.index + match[0].length);
+}
+
+function decodeJsonStringPrefix(source: string, start: number): { value: string; closed: boolean } {
+  let value = '';
+  let index = start;
+  while (index < source.length) {
+    const char = source[index];
+    if (char === '"') return { value, closed: true };
+    if (char !== '\\') {
+      value += char;
+      index += 1;
+      continue;
+    }
+
+    const escape = source[index + 1];
+    if (escape === undefined) break;
+    if (escape === 'u') {
+      const hex = source.slice(index + 2, index + 6);
+      if (!/^[0-9a-fA-F]{4}$/.test(hex)) break;
+      value += String.fromCharCode(parseInt(hex, 16));
+      index += 6;
+      continue;
+    }
+    const simple: Record<string, string> = {
+      '"': '"',
+      '\\': '\\',
+      '/': '/',
+      b: '\b',
+      f: '\f',
+      n: '\n',
+      r: '\r',
+      t: '\t',
+    };
+    value += simple[escape] ?? escape;
+    index += 2;
+  }
+  return { value, closed: false };
 }
 
 function firstString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null;
+}
+
+/** Accepts a string or an array of strings (some gateways return sections). */
+function firstText(value: unknown): string | null {
+  if (typeof value === 'string') return value.trim() ? value : null;
+  if (Array.isArray(value)) {
+    const parts = value.filter((item): item is string => typeof item === 'string');
+    const joined = parts.join('\n').trim();
+    return joined ? joined : null;
+  }
+  return null;
 }
 
 export interface PlatformPromptInput {
@@ -170,8 +284,8 @@ export interface PlatformPromptInput {
 
 const PLATFORM_RULES: Record<CopyPlatform, { zh: string; en: string }> = {
   xiaohongshu: {
-    zh: '小红书种草笔记：20 字以内标题（可带 emoji）+ 3–5 段正文 + 5 个话题标签；口语化、有真实体验感、适量 emoji。',
-    en: 'Xiaohongshu note: a title under 20 characters, 3–5 short paragraphs and 5 hashtags; conversational, first-person and emoji-friendly.',
+    zh: '小红书种草笔记：20 字以内标题（可带 emoji）+ 3–5 段正文 + 5 个话题标签；口语化、场景化、适量 emoji。只描述商品资料能支持的内容，不要虚构个人使用经历。',
+    en: 'Xiaohongshu note: a title under 20 characters, 3–5 short paragraphs and 5 hashtags; conversational, scene-based and emoji-friendly. Do not invent personal experience.',
   },
   moments: {
     zh: '微信朋友圈：100–180 字短文案，2–3 句话，生活化语气，少量 emoji，不要堆砌话题标签。',
@@ -187,6 +301,25 @@ const PLATFORM_RULES: Record<CopyPlatform, { zh: string; en: string }> = {
   },
 };
 
+/**
+ * Output-token budgets per platform. The gateway's reasoning model spends
+ * completion tokens on hidden reasoning first, so a fixed low budget (the old
+ * 900) can be exhausted before any copy is emitted — most often for the long
+ * detail-page and Douyin-script formats.
+ */
+export const PLATFORM_MAX_TOKENS: Record<CopyPlatform, number> = {
+  xiaohongshu: 2400,
+  moments: 2400,
+  detail: 3200,
+  douyin: 3200,
+};
+
+/** Ceiling for the single retry (budget doubles, but never beyond this). */
+const RETRY_MAX_TOKENS = 6000;
+
+/** A salvaged partial body shorter than this is not publishable. */
+const MIN_SALVAGED_BODY = 30;
+
 export function buildPlatformPrompt(input: PlatformPromptInput): { system: string; user: string } {
   const { platform, product, audience, sellingPoints, tone, lang } = input;
   const price = `¥${product.price.toFixed(2)}`;
@@ -195,7 +328,11 @@ export function buildPlatformPrompt(input: PlatformPromptInput): { system: strin
     'You are a senior e-commerce copywriter for small Chinese retailers.',
     'Write publish-ready marketing copy that obeys China’s Advertising Law.',
     'Rules:',
-    '- Use only the supplied product facts. Never invent prices, stock, certifications, sales numbers or medical effects.',
+    '- Use only the supplied product facts. Never invent prices, stock, certifications, sales numbers, test results, awards or medical effects.',
+    '- Never invent first-person or customer experiences (e.g. “我用了三个月”, “亲测有效”, “顾客反馈”), review quotes, surveys or statistics. Describe the product and its intended use only.',
+    lang === 'zh'
+      ? '- 只能使用提供的商品信息：不要编造亲身体验、使用时长、检测结果、销量、资质、用户评价或任何资料中没有的事实；资料不足时宁可不写。'
+      : '- Do not fabricate personal use, test results, sales figures, certifications, reviews or any fact not present in the product data. Omit what is missing.',
     '- Do not use absolute superlatives (最/第一/国家级/100%/唯一/顶级) or cure claims.',
     '- Use emoji naturally.',
     `- ${PLATFORM_RULES[platform][lang]}`,
@@ -222,9 +359,10 @@ export function buildPlatformPrompt(input: PlatformPromptInput): { system: strin
   return { system, user };
 }
 
-async function generateOne(
+function requestCopy(
   provider: LlmProvider,
   prompt: { system: string; user: string },
+  options: { maxTokens: number; json: boolean },
 ): Promise<string> {
   return provider.complete({
     messages: [
@@ -232,8 +370,118 @@ async function generateOne(
       { role: 'user', content: prompt.user },
     ],
     temperature: 0.8,
-    maxTokens: 900,
+    maxTokens: options.maxTokens,
+    json: options.json,
   });
+}
+
+type GenerationFailure = 'provider_error' | 'empty_output' | 'truncated_output' | 'unparsed_output';
+
+interface AttemptResult {
+  raw: string;
+  parse: ParsedPlatformOutput;
+  failure?: GenerationFailure;
+  status?: number;
+}
+
+async function attemptGeneration(
+  provider: LlmProvider,
+  prompt: { system: string; user: string },
+  maxTokens: number,
+  json: boolean,
+): Promise<AttemptResult> {
+  let raw: string;
+  try {
+    raw = await requestCopy(provider, prompt, { maxTokens, json });
+  } catch (error) {
+    return {
+      raw: '',
+      parse: { title: '', body: '', kind: 'empty', partial: false },
+      failure: 'provider_error',
+      status: error instanceof LlmError ? error.status : undefined,
+    };
+  }
+
+  const parse = parsePlatformOutputDetailed(raw);
+  if (!parse.title && !parse.body) {
+    return { raw, parse, failure: parse.kind === 'empty' ? 'empty_output' : 'unparsed_output' };
+  }
+  // A title without a body cannot be published; retry rather than ship it.
+  if (!parse.body) return { raw, parse, failure: 'unparsed_output' };
+  if (parse.partial) return { raw, parse, failure: 'truncated_output' };
+  return { raw, parse };
+}
+
+function failedPlatformCopy(platform: CopyPlatform): PlatformCopy {
+  return {
+    platform,
+    title: '',
+    body: '',
+    text: '',
+    warnings: [],
+    blocked: false,
+    error: 'generation_failed',
+  };
+}
+
+function logGenerationFailure(
+  platform: CopyPlatform,
+  failure: GenerationFailure,
+  attempt: number,
+  status?: number,
+): void {
+  // Deliberately no prompt/completion content and no API key.
+  console.warn('[copywriting] generation attempt failed', {
+    platform,
+    attempt,
+    failure,
+    ...(status !== undefined ? { status } : {}),
+  });
+}
+
+/**
+ * Generates one platform with at most one retry:
+ * - truncated / empty / unparsable output -> retry once with a doubled budget;
+ * - HTTP 400 (e.g. gateway rejects JSON mode) -> retry once without JSON mode.
+ * Transport failures (timeouts, 5xx after the provider's own retry) are not
+ * retried again here. A sufficiently long partially salvaged answer from an
+ * earlier attempt is still usable when the retry also fails.
+ */
+async function generatePlatformText(
+  provider: LlmProvider,
+  platform: CopyPlatform,
+  prompt: { system: string; user: string },
+): Promise<string | null> {
+  const baseTokens = PLATFORM_MAX_TOKENS[platform];
+  const first = await attemptGeneration(provider, prompt, baseTokens, true);
+
+  if (!first.failure) return first.raw;
+  logGenerationFailure(platform, first.failure, 1, first.status);
+
+  // Transport errors other than a rejected JSON mode are already retried once
+  // inside OpenAiProvider; retrying here again would triple the latency.
+  if (first.failure === 'provider_error' && first.status !== 400) return null;
+
+  const retryOptions =
+    first.failure === 'provider_error' && first.status === 400
+      ? { maxTokens: baseTokens, json: false }
+      : { maxTokens: Math.min(baseTokens * 2, RETRY_MAX_TOKENS), json: true };
+  const second = await attemptGeneration(
+    provider,
+    prompt,
+    retryOptions.maxTokens,
+    retryOptions.json,
+  );
+
+  if (!second.failure) return second.raw;
+  logGenerationFailure(platform, second.failure, 2, second.status);
+
+  // A truncated answer is better than nothing, but only when enough text was
+  // recovered to publish. Prefer the retry, then the first attempt.
+  const usable = [second, first].find(
+    (result) => result.parse.body.trim().length >= MIN_SALVAGED_BODY,
+  );
+  return usable?.raw ?? null;
 }
 
 /** Runs one platform, cleaning ad-law terms and blocking illegal output. */
@@ -313,31 +561,39 @@ export async function generateCopywriting(
   const mock = provider.kind === 'mock';
   const outputs = await Promise.all(
     input.platforms.map(async (platform): Promise<PlatformCopy> => {
-      try {
-        const raw = mock
-          ? buildMockCopy({ platform, product, audience: input.audience, sellingPoints, tone: input.tone, lang: input.lang })
-          : await generateOne(
-              provider,
-              buildPlatformPrompt({
-                platform,
-                product,
-                audience: input.audience,
-                sellingPoints,
-                tone: input.tone,
-                lang: input.lang,
-              }),
-            );
-        return finalizePlatformCopy(platform, raw, input.lang);
-      } catch {
-        return {
+      const prompt = buildPlatformPrompt({
+        platform,
+        product,
+        audience: input.audience,
+        sellingPoints,
+        tone: input.tone,
+        lang: input.lang,
+      });
+
+      if (mock) {
+        const raw = buildMockCopy({
           platform,
-          title: '',
-          body: '',
-          text: '',
-          warnings: [],
-          blocked: false,
-          error: 'generation_failed',
-        };
+          product,
+          audience: input.audience,
+          sellingPoints,
+          tone: input.tone,
+          lang: input.lang,
+        });
+        return finalizePlatformCopy(platform, raw, input.lang);
+      }
+
+      try {
+        const raw = await generatePlatformText(provider, platform, prompt);
+        if (raw === null) return failedPlatformCopy(platform);
+        return finalizePlatformCopy(platform, raw, input.lang);
+      } catch (error) {
+        // Defensive: generatePlatformText already handles provider errors.
+        console.warn('[copywriting] platform generation crashed', {
+          platform,
+          error: error instanceof Error ? error.name : 'unknown',
+          status: error instanceof LlmError ? error.status : undefined,
+        });
+        return failedPlatformCopy(platform);
       }
     }),
   );
