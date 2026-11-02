@@ -71,3 +71,4 @@
 - 17:28 admin 登录正常（商品 1、会话 6、站点 1）；Widget 对话 SSE 200（mock:false，真实 LLM）；trial1 仅见自身空数据（多用户隔离正常）。
 - 17:30 新增 `HANDOFF.md`（接手提示词 + 完整交接文档，无密钥），复制到 zz `/root/shoppulse-ai-HANDOFF.md`（600）和 Windows 桌面 `shoppulse-HANDOFF.md`；清理 zz `/tmp` 部署脚本。
 - 17:31 开始制作中文字幕演示视频（本地 3200 端口 + 示例数据 + Mock 模式，由 Claude Code 执行录制）。
+- 18:13 演示视频完成：Claude Code 本地 3200 端口 + 全新 DB（demo/demo2 示例账号，密码仅存 0600 文件，未出现在画面）+ 虚构示例数据「云杉生活馆」，Mock 模式录制 10 个场景（落地页→登录→CSV 导入→知识库→挂件问答/价格/转人工→收件箱标签+快捷回复+人工回复→四平台文案→报表→多用户隔离→X 关闭挂件）；放慢 1.35 倍至 2:16，1280x720 H.264；中文 SRT + Noto Sans CJK SC 烧录版。存于 docs/demo/，未推送 GitHub。
