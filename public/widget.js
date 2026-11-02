@@ -230,7 +230,7 @@
     '.typing span:nth-child(2){animation-delay:.2s}',
     '.typing span:nth-child(3){animation-delay:.4s}',
     '@keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}',
-    '.products{display:flex;gap:8px;overflow-x:auto;padding:2px 0 4px;align-self:stretch}',
+    '.products{display:flex;flex-shrink:0;gap:8px;overflow-x:auto;padding:2px 0 4px;align-self:stretch}',
     '.card{flex:0 0 180px;background:#fff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;box-shadow:0 4px 12px rgba(15,23,42,.06);',
     'display:flex;flex-direction:column}',
     '.card img{width:100%;height:96px;object-fit:cover;background:#f1f5f9;display:block}',

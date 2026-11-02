@@ -190,6 +190,12 @@ describe('widget.js', () => {
     expect((shadow.querySelector('.panel') as HTMLElement).hidden).toBe(false);
   });
 
+  it('keeps product cards from collapsing in a long conversation', () => {
+    // In the flex-column message list, an overflowing history shrank the
+    // overflow-x:auto product row to 0px height, hiding the cards.
+    expect(WIDGET_SOURCE).toMatch(/\.products\{[^}]*flex-shrink:0/);
+  });
+
   it('closes via the header X and reopens (hidden attr is backed by the stylesheet)', () => {
     // The regression: `.launcher{display:flex}`/`.panel{display:flex}` beat the
     // UA `[hidden]{display:none}` rule, so the `hidden` attribute had no visual
