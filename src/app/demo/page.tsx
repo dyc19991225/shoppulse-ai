@@ -14,9 +14,9 @@ export default function DemoPage() {
   const t = getRequestTranslator();
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
-      <header className="border-b border-slate-200 bg-white/80 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
+    <main className="min-h-screen bg-slate-50">
+      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
+        <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between px-5 sm:px-8">
           <div className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-brand-500" aria-hidden />
             <span className="font-bold tracking-tight">ShopPulse AI</span>
@@ -50,7 +50,7 @@ export default function DemoPage() {
             { icon: ShieldCheck, title: t('kb.title'), body: t('kb.subtitle') },
             { icon: Sparkles, title: t('nav.copywriting'), body: t('admin.kbCardDesc') },
           ].map(({ icon: Icon, title, body }) => (
-            <div key={title} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div key={title} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <Icon className="h-5 w-5 text-brand-600" aria-hidden />
               <h2 className="mt-3 font-medium text-slate-900">{title}</h2>
               <p className="mt-1 text-sm leading-relaxed text-slate-500">{body}</p>
@@ -58,9 +58,9 @@ export default function DemoPage() {
           ))}
         </div>
 
-        <div className="mt-10 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mt-10 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="text-sm font-semibold text-slate-900">{t('admin.embedTitle')}</h2>
-          <pre className="mt-3 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs leading-relaxed text-slate-100">
+          <pre className="mt-3 overflow-x-auto rounded-xl bg-slate-50 p-4 text-xs leading-relaxed text-slate-700">
 {`<script src="${'https://YOUR-DOMAIN'}/widget.js" data-site-key="${DEFAULT_SITE_KEY}" async></script>`}
           </pre>
         </div>
