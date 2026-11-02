@@ -1,0 +1,52 @@
+[Unit]
+Description=ShopPulse AI (Next.js standalone)
+Documentation=file:/opt/shoppulse-ai/current/DEPLOY.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=shoppulse
+Group=shoppulse
+WorkingDirectory=/opt/shoppulse-ai/current
+EnvironmentFile=/opt/shoppulse-ai/shoppulse.env
+Environment=NODE_ENV=production
+Environment=PORT=8802
+Environment=HOSTNAME=127.0.0.1
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=NEXT_TELEMETRY_DISABLED=1
+ExecStart=/usr/bin/env node /opt/shoppulse-ai/current/server.js
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+KillSignal=SIGTERM
+SyslogIdentifier=shoppulse-ai
+StandardOutput=journal
+StandardError=journal
+
+# Memory: the zz box has 2 cores / 1.9G and also runs Caddy, the LLM
+# gateway and an x-ui process. Keep the Next.js server comfortably below
+# the design target (< 300MB RSS) with a hard ceiling at 400M.
+MemoryHigh=320M
+MemoryMax=400M
+
+# Hardening. The SQLite database is the only writable runtime path.
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/var/lib/shoppulse-ai
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

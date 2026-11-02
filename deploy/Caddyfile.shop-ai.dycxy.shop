@@ -1,0 +1,28 @@
+# ShopPulse AI — Caddy site block.
+#
+# Append this block to /etc/caddy/Caddyfile on zz (do NOT replace the file;
+# existing sites dyc.dycxy.shop, shop.dycxy.shop and tutor.dycxy.shop must
+# stay untouched). Then:
+#   sudo cp -a /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak.$(date +%Y%m%d-%H%M%S)
+#   sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+#   sudo systemctl reload caddy
+#
+# flush_interval -1 disables reverse-proxy buffering so SSE deltas reach the
+# browser immediately. Compression is skipped for the SSE endpoint.
+
+shop-ai.dycxy.shop {
+	# SSE must not be compressed or buffered by the proxy.
+	@not_sse not path /api/widget/chat
+	encode @not_sse zstd gzip
+
+	reverse_proxy 127.0.0.1:8802 {
+		flush_interval -1
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}

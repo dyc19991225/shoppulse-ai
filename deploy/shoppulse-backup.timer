@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily ShopPulse AI SQLite backup
+
+[Timer]
+# 03:20 local time, with jitter so it does not collide with other cron work.
+OnCalendar=*-*-* 03:20:00
+RandomizedDelaySec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target

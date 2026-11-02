@@ -1,0 +1,13 @@
+[Unit]
+Description=ShopPulse AI SQLite backup
+Documentation=file:/opt/shoppulse-ai/current/DEPLOY.md
+After=shoppulse-ai.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/opt/shoppulse-ai/current/deploy/backup.sh --db /var/lib/shoppulse-ai/shoppulse.db --dest /var/backups/shoppulse-ai --retention-days 14
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
