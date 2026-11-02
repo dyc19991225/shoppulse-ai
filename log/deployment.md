@@ -63,3 +63,11 @@
 - 2026-11-02 17:22 (UTC+8) Codex（gpt-6-luna low）3 轮重建 /：hero+截图拼贴+浮动卡片、场景卡、痛点、深色 01–04 功能区、一行代码接入、角色方案、传统 vs ShopPulse 对比+安全要点、示例定价（已标注）、FAQ+2、渐变 CTA、大页脚；中英双语。发现 standalone 无 sharp 导致 next/image 报错，设 images.unoptimized。
 - 2026-11-02 17:20 (UTC+8) 挂件 X 无法关闭（线上 bug）：Claude Code（deepseek-v4-pro）定位为 shadow CSS .panel/.launcher{display:flex} 覆盖 [hidden]；加 [hidden]{display:none!important} + 测试。本地真实浏览器（CDP 穿透 closed shadow）桌面/移动：打开→X 关闭→再打开均正常。
 - 2026-11-02 17:30 (UTC+8) npm test 484/484，build 通过；截图 screenshots/landing-v2-{desktop,mobile,desktop-en,mobile-en}.png，无横向溢出、无破图。未部署、未推送。
+
+## 2026-11-02 17:27–17:35（UTC+8）v0.4 部署 + HANDOFF
+- 17:27 部署前备份：服务备份 `shoppulse-20261102-092756.db.gz`（副本 `shoppulse-pre-v0.4.db.gz`）+ 手动备份 `manual-pre-v0.4-20261102T092756Z/`（db/-wal/-shm，schema v3）。
+- 17:28 上线 release `20261102T092806Z-341d6e3`（BUILD_INFO commit=341d6e3 dirty=no），保留上一版 `20261102T085642Z-2beffdc` 以便回滚。
+- 17:28 HTTPS 验证：`/`、`/demo`、`/widget.js`（含 X 关闭修复）、`/api/health`、`/login` 均 200；landing webp 图片 200；`/admin` 307 → `/login?next=%2Fadmin`；无 `_next/image` 引用；浏览器检查 12 张图 0 张损坏、无横向溢出。
+- 17:28 admin 登录正常（商品 1、会话 6、站点 1）；Widget 对话 SSE 200（mock:false，真实 LLM）；trial1 仅见自身空数据（多用户隔离正常）。
+- 17:30 新增 `HANDOFF.md`（接手提示词 + 完整交接文档，无密钥），复制到 zz `/root/shoppulse-ai-HANDOFF.md`（600）和 Windows 桌面 `shoppulse-HANDOFF.md`；清理 zz `/tmp` 部署脚本。
+- 17:31 开始制作中文字幕演示视频（本地 3200 端口 + 示例数据 + Mock 模式，由 Claude Code 执行录制）。
