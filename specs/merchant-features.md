@@ -22,7 +22,10 @@ is a real per-user DB aggregate, otherwise an empty state.
   `range {from,to,days}`, `kpis {conversations, messages, visitorMessages, aiReplies, agentReplies, handoffs, handoffRate, handled, pendingHandoffs, copiesGenerated, kbEntries, products}`,
   `daily [{date, conversations, messages, handoffs, copies}]` (every day in range present, zero-filled, UTC dates),
   `intents [{intent, count}]`, `topQuestions [{text, count}]` (normalised visitor messages, top 10), `sites [{id,name,conversations}]`.
-  Page: KPI cards, a daily trend chart (inline SVG, no new chart dependency), intent bars, top questions, per-site table,
+  Also (from SaleSmartly 'Service overview' / 'Comprehensive report'): `today {conversations, pendingHandoffs}` realtime cards,
+  `kpis.avgAgentFirstResponseSec` (handoff conversations: first agent message − first visitor message after needs_human; null when no data),
+  and `GET /api/admin/reports/summary.csv?days=` exporting the daily rows.
+  Page: today cards, KPI cards, a daily trend chart (inline SVG, no new chart dependency), intent bars, top questions, per-site table,
   range switch 7/30/90; empty state when there is no data. Dashboard `/admin` links to it.
 - **F2 Quick replies** (script library). Table `quick_replies(id, owner_id, title, content ≤2000, created_at, updated_at)`.
   CRUD `GET/POST /api/admin/quick-replies`, `PUT/DELETE /api/admin/quick-replies/[id]` (other owner → 404). Admin page
