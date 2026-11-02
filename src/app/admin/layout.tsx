@@ -14,10 +14,12 @@ export const dynamic = 'force-dynamic';
  */
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   let username = '';
+  let role: 'admin' | 'user' = 'user';
   try {
     const user = await getCurrentUser(cookies().get(SESSION_COOKIE)?.value);
     if (!user) redirect('/login?next=/admin');
     username = user.username;
+    role = user.role;
   } catch (error) {
     // redirect() throws; rethrow so Next handles it.
     if (error && typeof error === 'object' && 'digest' in error) throw error;
@@ -36,11 +38,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     sites: t('nav.sites'),
     logout: t('common.logout'),
     demo: t('admin.viewDemo'),
+    roleAdmin: t('admin.roleAdmin'),
+    roleUser: t('admin.roleUser'),
   };
 
   return (
     <div className="flex min-h-screen bg-slate-50">
-      <AdminSidebar locale={locale} labels={labels} username={username} />
+      <AdminSidebar locale={locale} labels={labels} username={username} role={role} />
       <div className="min-w-0 flex-1">
         <main className="mx-auto max-w-7xl px-4 pb-8 pt-20 sm:px-6 sm:py-8 md:pt-8 lg:px-8">{children}</main>
       </div>

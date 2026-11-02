@@ -142,6 +142,8 @@ export const en: Record<DictionaryKey, string> = {
 
   'admin.console': 'Merchant admin',
   'admin.signedInAs': 'Signed in as {user}',
+  'admin.roleAdmin': 'Admin',
+  'admin.roleUser': 'Merchant',
   'admin.viewDemo': 'View demo',
   'admin.dashboardTitle': 'Overview',
   'admin.dashboardSubtitle': 'Manage your knowledge base, products and conversations',
@@ -152,6 +154,7 @@ export const en: Record<DictionaryKey, string> = {
   'admin.welcomeBody': 'Start by enriching the knowledge base, then add products, and finally embed the widget on your storefront.',
   'admin.embedTitle': 'Embed the widget',
   'admin.embedHint': 'Paste this snippet before </body> on your site to show the chat widget.',
+  'admin.embedNoSite': 'No site yet — create one on the Sites page first.',
 
   'kb.title': 'Knowledge base',
   'kb.subtitle': 'The AI only answers price, policy and timing questions from this content.',

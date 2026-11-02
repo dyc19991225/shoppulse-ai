@@ -204,7 +204,10 @@ export const DEFAULT_ALLOWED_ORIGINS = [
   'http://127.0.0.1:3000',
 ];
 
-/** Creates the default widget site on first boot if no sites exist. */
+/** Id of the bootstrap admin created by migration v2; it owns all v1 data. */
+export const BOOTSTRAP_ADMIN_ID = 1;
+
+/** Creates the bootstrap admin's default widget site on first boot if none exist. */
 export function ensureDefaultSite(db: DB): number {
   const existing = db
     .prepare('SELECT id FROM sites ORDER BY id LIMIT 1')
@@ -213,10 +216,11 @@ export function ensureDefaultSite(db: DB): number {
 
   const info = db
     .prepare(
-      `INSERT INTO sites (name, site_key, allowed_origins, rate_limit_per_min, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO sites (owner_id, name, site_key, allowed_origins, rate_limit_per_min, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
     )
     .run(
+      BOOTSTRAP_ADMIN_ID,
       DEFAULT_SITE_NAME,
       DEFAULT_SITE_KEY,
       JSON.stringify(DEFAULT_ALLOWED_ORIGINS),
@@ -233,9 +237,6 @@ export function nowIso(): string {
 // ---------------------------------------------------------------------------
 // Users repository (schema v2)
 // ---------------------------------------------------------------------------
-
-/** Id of the bootstrap admin created by migration v2; it owns all v1 data. */
-export const BOOTSTRAP_ADMIN_ID = 1;
 
 export type UserRole = 'admin' | 'user';
 
@@ -357,6 +358,7 @@ export interface ProductInput {
 
 export interface Site {
   id: number;
+  ownerId: number;
   name: string;
   siteKey: string;
   allowedOrigins: string[];
@@ -456,6 +458,7 @@ function mapProduct(row: Row): Product {
 function mapSite(row: Row): Site {
   return {
     id: Number(row.id),
+    ownerId: Number(row.owner_id),
     name: String(row.name),
     siteKey: String(row.site_key),
     allowedOrigins: parseJson<string[]>(String(row.allowed_origins), []),
@@ -498,37 +501,41 @@ export interface KbListOptions {
   limit?: number;
 }
 
-export function listKbEntries(db: DB, options: KbListOptions = {}): KbEntry[] {
-  const where: string[] = [];
-  const params: unknown[] = [];
+export function listKbEntries(
+  db: DB,
+  ownerId: number,
+  options: KbListOptions = {},
+): KbEntry[] {
+  const where: string[] = ['owner_id = ?'];
+  const params: unknown[] = [ownerId];
   if (options.enabledOnly) where.push('enabled = 1');
   if (options.search?.trim()) {
     const like = `%${options.search.trim()}%`;
     where.push('(title LIKE ? OR content LIKE ? OR keywords LIKE ?)');
     params.push(like, like, like);
   }
-  const sql = `SELECT * FROM kb_entries ${
-    where.length ? `WHERE ${where.join(' AND ')}` : ''
-  } ORDER BY updated_at DESC, id DESC ${options.limit ? 'LIMIT ?' : ''}`;
+  const sql = `SELECT * FROM kb_entries WHERE ${where.join(' AND ')}
+    ORDER BY updated_at DESC, id DESC ${options.limit ? 'LIMIT ?' : ''}`;
   if (options.limit) params.push(options.limit);
   return (db.prepare(sql).all(...params) as Row[]).map(mapKb);
 }
 
-export function getKbEntry(db: DB, id: number): KbEntry | null {
-  const row = db.prepare('SELECT * FROM kb_entries WHERE id = ?').get(id) as
-    | Record<string, unknown>
-    | undefined;
+export function getKbEntry(db: DB, ownerId: number, id: number): KbEntry | null {
+  const row = db
+    .prepare('SELECT * FROM kb_entries WHERE id = ? AND owner_id = ?')
+    .get(id, ownerId) as Record<string, unknown> | undefined;
   return row ? mapKb(row) : null;
 }
 
-export function createKbEntry(db: DB, input: KbInput): KbEntry {
+export function createKbEntry(db: DB, ownerId: number, input: KbInput): KbEntry {
   const now = nowIso();
   const info = db
     .prepare(
-      `INSERT INTO kb_entries (type, title, content, keywords, enabled, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO kb_entries (owner_id, type, title, content, keywords, enabled, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
+      ownerId,
       input.type ?? 'faq',
       input.title,
       input.content,
@@ -537,21 +544,22 @@ export function createKbEntry(db: DB, input: KbInput): KbEntry {
       now,
       now,
     );
-  return getKbEntry(db, Number(info.lastInsertRowid))!;
+  return getKbEntry(db, ownerId, Number(info.lastInsertRowid))!;
 }
 
 export function updateKbEntry(
   db: DB,
+  ownerId: number,
   id: number,
   input: Partial<KbInput>,
 ): KbEntry | null {
-  const existing = getKbEntry(db, id);
+  const existing = getKbEntry(db, ownerId, id);
   if (!existing) return null;
   const merged = { ...existing, ...input };
   db.prepare(
     `UPDATE kb_entries
      SET type = ?, title = ?, content = ?, keywords = ?, enabled = ?, updated_at = ?
-     WHERE id = ?`,
+     WHERE id = ? AND owner_id = ?`,
   ).run(
     merged.type,
     merged.title,
@@ -560,12 +568,16 @@ export function updateKbEntry(
     merged.enabled ? 1 : 0,
     nowIso(),
     id,
+    ownerId,
   );
-  return getKbEntry(db, id);
+  return getKbEntry(db, ownerId, id);
 }
 
-export function deleteKbEntry(db: DB, id: number): boolean {
-  return db.prepare('DELETE FROM kb_entries WHERE id = ?').run(id).changes > 0;
+export function deleteKbEntry(db: DB, ownerId: number, id: number): boolean {
+  return (
+    db.prepare('DELETE FROM kb_entries WHERE id = ? AND owner_id = ?').run(id, ownerId).changes >
+    0
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -579,9 +591,13 @@ export interface ProductListOptions {
   limit?: number;
 }
 
-export function listProducts(db: DB, options: ProductListOptions = {}): Product[] {
-  const where: string[] = [];
-  const params: unknown[] = [];
+export function listProducts(
+  db: DB,
+  ownerId: number,
+  options: ProductListOptions = {},
+): Product[] {
+  const where: string[] = ['owner_id = ?'];
+  const params: unknown[] = [ownerId];
   if (options.enabledOnly) where.push('enabled = 1');
   if (options.category?.trim()) {
     where.push('category = ?');
@@ -592,36 +608,36 @@ export function listProducts(db: DB, options: ProductListOptions = {}): Product[
     where.push('(name LIKE ? OR sku LIKE ? OR category LIKE ? OR description LIKE ?)');
     params.push(like, like, like, like);
   }
-  const sql = `SELECT * FROM products ${
-    where.length ? `WHERE ${where.join(' AND ')}` : ''
-  } ORDER BY updated_at DESC, id DESC ${options.limit ? 'LIMIT ?' : ''}`;
+  const sql = `SELECT * FROM products WHERE ${where.join(' AND ')}
+    ORDER BY updated_at DESC, id DESC ${options.limit ? 'LIMIT ?' : ''}`;
   if (options.limit) params.push(options.limit);
   return (db.prepare(sql).all(...params) as Row[]).map(mapProduct);
 }
 
-export function getProduct(db: DB, id: number): Product | null {
-  const row = db.prepare('SELECT * FROM products WHERE id = ?').get(id) as
-    | Record<string, unknown>
-    | undefined;
+export function getProduct(db: DB, ownerId: number, id: number): Product | null {
+  const row = db
+    .prepare('SELECT * FROM products WHERE id = ? AND owner_id = ?')
+    .get(id, ownerId) as Record<string, unknown> | undefined;
   return row ? mapProduct(row) : null;
 }
 
-export function getProductBySku(db: DB, sku: string): Product | null {
-  const row = db.prepare('SELECT * FROM products WHERE sku = ?').get(sku) as
-    | Record<string, unknown>
-    | undefined;
+export function getProductBySku(db: DB, ownerId: number, sku: string): Product | null {
+  const row = db
+    .prepare('SELECT * FROM products WHERE sku = ? AND owner_id = ?')
+    .get(sku, ownerId) as Record<string, unknown> | undefined;
   return row ? mapProduct(row) : null;
 }
 
-export function createProduct(db: DB, input: ProductInput): Product {
+export function createProduct(db: DB, ownerId: number, input: ProductInput): Product {
   const now = nowIso();
   const info = db
     .prepare(
       `INSERT INTO products
-       (sku, name, category, price, stock, description, selling_points, image_url, url, enabled, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (owner_id, sku, name, category, price, stock, description, selling_points, image_url, url, enabled, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
+      ownerId,
       input.sku?.trim() || null,
       input.name,
       input.category ?? '',
@@ -635,22 +651,23 @@ export function createProduct(db: DB, input: ProductInput): Product {
       now,
       now,
     );
-  return getProduct(db, Number(info.lastInsertRowid))!;
+  return getProduct(db, ownerId, Number(info.lastInsertRowid))!;
 }
 
 export function updateProduct(
   db: DB,
+  ownerId: number,
   id: number,
   input: Partial<ProductInput>,
 ): Product | null {
-  const existing = getProduct(db, id);
+  const existing = getProduct(db, ownerId, id);
   if (!existing) return null;
   const merged = { ...existing, ...input };
   db.prepare(
     `UPDATE products
      SET sku = ?, name = ?, category = ?, price = ?, stock = ?, description = ?,
          selling_points = ?, image_url = ?, url = ?, enabled = ?, updated_at = ?
-     WHERE id = ?`,
+     WHERE id = ? AND owner_id = ?`,
   ).run(
     merged.sku?.trim() || null,
     merged.name,
@@ -664,29 +681,38 @@ export function updateProduct(
     merged.enabled ? 1 : 0,
     nowIso(),
     id,
+    ownerId,
   );
-  return getProduct(db, id);
+  return getProduct(db, ownerId, id);
 }
 
-export function deleteProduct(db: DB, id: number): boolean {
-  return db.prepare('DELETE FROM products WHERE id = ?').run(id).changes > 0;
+export function deleteProduct(db: DB, ownerId: number, id: number): boolean {
+  return (
+    db.prepare('DELETE FROM products WHERE id = ? AND owner_id = ?').run(id, ownerId).changes > 0
+  );
 }
 
 // ---------------------------------------------------------------------------
 // Sites repository
 // ---------------------------------------------------------------------------
 
-export function listSites(db: DB): Site[] {
-  return (db.prepare('SELECT * FROM sites ORDER BY id ASC').all() as Row[]).map(mapSite);
+export function listSites(db: DB, ownerId: number): Site[] {
+  return (
+    db.prepare('SELECT * FROM sites WHERE owner_id = ? ORDER BY id ASC').all(ownerId) as Row[]
+  ).map(mapSite);
 }
 
-export function getSiteById(db: DB, id: number): Site | null {
-  const row = db.prepare('SELECT * FROM sites WHERE id = ?').get(id) as
-    | Record<string, unknown>
-    | undefined;
+export function getSiteById(db: DB, ownerId: number, id: number): Site | null {
+  const row = db
+    .prepare('SELECT * FROM sites WHERE id = ? AND owner_id = ?')
+    .get(id, ownerId) as Record<string, unknown> | undefined;
   return row ? mapSite(row) : null;
 }
 
+/**
+ * Public widget lookup by site key. Deliberately global: the key is the
+ * widget's public identity, and ownership comes back as `site.ownerId`.
+ */
 export function getSiteByKey(db: DB, siteKey: string): Site | null {
   const row = db.prepare('SELECT * FROM sites WHERE site_key = ?').get(siteKey) as
     | Record<string, unknown>
@@ -694,78 +720,104 @@ export function getSiteByKey(db: DB, siteKey: string): Site | null {
   return row ? mapSite(row) : null;
 }
 
-export function createSite(db: DB, input: SiteInput): Site {
+/**
+ * All configured origins, used only for widget CORS preflight when the caller
+ * has not named a site key yet. Not an admin data accessor.
+ */
+export function listAllAllowedOrigins(db: DB): string[] {
+  return (db.prepare('SELECT allowed_origins FROM sites').all() as Row[]).flatMap((row) =>
+    parseJson<string[]>(String(row.allowed_origins), []),
+  );
+}
+
+export function createSite(db: DB, ownerId: number, input: SiteInput): Site {
   const info = db
     .prepare(
-      `INSERT INTO sites (name, site_key, allowed_origins, rate_limit_per_min, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO sites (owner_id, name, site_key, allowed_origins, rate_limit_per_min, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
     )
     .run(
+      ownerId,
       input.name,
       input.siteKey,
       JSON.stringify(input.allowedOrigins),
       input.rateLimitPerMin,
       nowIso(),
     );
-  return getSiteById(db, Number(info.lastInsertRowid))!;
+  return getSiteById(db, ownerId, Number(info.lastInsertRowid))!;
 }
 
 export function updateSite(
   db: DB,
+  ownerId: number,
   id: number,
   input: Partial<SiteInput>,
 ): Site | null {
-  const existing = getSiteById(db, id);
+  const existing = getSiteById(db, ownerId, id);
   if (!existing) return null;
   const merged = { ...existing, ...input };
   db.prepare(
     `UPDATE sites SET name = ?, site_key = ?, allowed_origins = ?, rate_limit_per_min = ?
-     WHERE id = ?`,
+     WHERE id = ? AND owner_id = ?`,
   ).run(
     merged.name,
     merged.siteKey,
     JSON.stringify(merged.allowedOrigins),
     merged.rateLimitPerMin,
     id,
+    ownerId,
   );
-  return getSiteById(db, id);
+  return getSiteById(db, ownerId, id);
 }
 
-export function deleteSite(db: DB, id: number): boolean {
+export function deleteSite(db: DB, ownerId: number, id: number): boolean {
+  if (!getSiteById(db, ownerId, id)) return false;
   const conversations = db
     .prepare('SELECT COUNT(*) AS count FROM conversations WHERE site_id = ?')
     .get(id) as { count: number };
   if (conversations.count > 0) {
     throw new Error('Cannot delete a site that has conversations');
   }
-  return db.prepare('DELETE FROM sites WHERE id = ?').run(id).changes > 0;
+  return db.prepare('DELETE FROM sites WHERE id = ? AND owner_id = ?').run(id, ownerId).changes > 0;
 }
 
 // ---------------------------------------------------------------------------
 // Conversations & messages repository
 // ---------------------------------------------------------------------------
 
+/** Conversations belong to a site, and a site belongs to an owner. */
+const OWNED_SITE = 'site_id IN (SELECT id FROM sites WHERE owner_id = ?)';
+
 export function createConversation(
   db: DB,
+  ownerId: number,
   input: { id: string; siteId: number; visitorId?: string; topIntent?: string },
 ): Conversation {
+  if (!getSiteById(db, ownerId, input.siteId)) {
+    throw new Error('Cannot create a conversation for a site owned by another user');
+  }
   const now = nowIso();
   db.prepare(
     `INSERT INTO conversations (id, site_id, visitor_id, started_at, last_at, needs_human, handled, top_intent)
      VALUES (?, ?, ?, ?, ?, 0, 0, ?)`,
   ).run(input.id, input.siteId, input.visitorId ?? '', now, now, input.topIntent ?? 'other');
-  return getConversation(db, input.id)!;
+  return getConversation(db, ownerId, input.id)!;
 }
 
-export function getConversation(db: DB, id: string): Conversation | null {
-  const row = db.prepare('SELECT * FROM conversations WHERE id = ?').get(id) as
-    | Record<string, unknown>
-    | undefined;
+export function getConversation(db: DB, ownerId: number, id: string): Conversation | null {
+  const row = db
+    .prepare(
+      `SELECT c.* FROM conversations c
+       JOIN sites s ON s.id = c.site_id
+       WHERE c.id = ? AND s.owner_id = ?`,
+    )
+    .get(id, ownerId) as Record<string, unknown> | undefined;
   return row ? mapConversation(row) : null;
 }
 
 export function touchConversation(
   db: DB,
+  ownerId: number,
   id: string,
   updates: { topIntent?: string; needsHuman?: boolean } = {},
 ): void {
@@ -779,14 +831,22 @@ export function touchConversation(
     sets.push('needs_human = ?');
     params.push(updates.needsHuman ? 1 : 0);
   }
-  params.push(id);
-  db.prepare(`UPDATE conversations SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+  params.push(id, ownerId);
+  db.prepare(
+    `UPDATE conversations SET ${sets.join(', ')} WHERE id = ? AND ${OWNED_SITE}`,
+  ).run(...params);
 }
 
-export function setConversationHandled(db: DB, id: string, handled: boolean): boolean {
+export function setConversationHandled(
+  db: DB,
+  ownerId: number,
+  id: string,
+  handled: boolean,
+): boolean {
   return (
-    db.prepare('UPDATE conversations SET handled = ? WHERE id = ?').run(handled ? 1 : 0, id)
-      .changes > 0
+    db
+      .prepare(`UPDATE conversations SET handled = ? WHERE id = ? AND ${OWNED_SITE}`)
+      .run(handled ? 1 : 0, id, ownerId).changes > 0
   );
 }
 
@@ -800,10 +860,11 @@ export interface ConversationListOptions {
 
 export function listConversations(
   db: DB,
+  ownerId: number,
   options: ConversationListOptions = {},
 ): { items: ConversationSummary[]; total: number } {
-  const where: string[] = [];
-  const params: unknown[] = [];
+  const where: string[] = ['s.owner_id = ?'];
+  const params: unknown[] = [ownerId];
   if (options.siteId) {
     where.push('c.site_id = ?');
     params.push(options.siteId);
@@ -816,9 +877,10 @@ export function listConversations(
     where.push('c.handled = ?');
     params.push(options.handled ? 1 : 0);
   }
-  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const whereSql = `WHERE ${where.join(' AND ')}`;
+  const fromSql = 'FROM conversations c JOIN sites s ON s.id = c.site_id';
   const total = (
-    db.prepare(`SELECT COUNT(*) AS count FROM conversations c ${whereSql}`).get(...params) as {
+    db.prepare(`SELECT COUNT(*) AS count ${fromSql} ${whereSql}`).get(...params) as {
       count: number;
     }
   ).count;
@@ -828,8 +890,7 @@ export function listConversations(
     .prepare(
       `SELECT c.*, s.name AS site_name,
               (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS message_count
-       FROM conversations c
-       JOIN sites s ON s.id = c.site_id
+       ${fromSql}
        ${whereSql}
        ORDER BY c.last_at DESC
        LIMIT ? OFFSET ?`,
@@ -846,13 +907,21 @@ export function listConversations(
   };
 }
 
-export function countConversations(db: DB): number {
-  return (db.prepare('SELECT COUNT(*) AS count FROM conversations').get() as { count: number })
-    .count;
+export function countConversations(db: DB, ownerId: number): number {
+  return (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM conversations c
+         JOIN sites s ON s.id = c.site_id
+         WHERE s.owner_id = ?`,
+      )
+      .get(ownerId) as { count: number }
+  ).count;
 }
 
 export function addMessage(
   db: DB,
+  ownerId: number,
   input: {
     id: string;
     conversationId: string;
@@ -862,6 +931,9 @@ export function addMessage(
     createdAt?: string;
   },
 ): Message {
+  if (!getConversation(db, ownerId, input.conversationId)) {
+    throw new Error('Cannot add a message to a conversation owned by another user');
+  }
   const createdAt = input.createdAt ?? nowIso();
   db.prepare(
     `INSERT INTO messages (id, conversation_id, role, content, intent, created_at)
@@ -877,16 +949,26 @@ export function addMessage(
   };
 }
 
-export function listMessages(db: DB, conversationId: string): Message[] {
+export function listMessages(db: DB, ownerId: number, conversationId: string): Message[] {
   return (
     db
-      .prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC, rowid ASC')
-      .all(conversationId) as Row[]
+      .prepare(
+        `SELECT m.* FROM messages m
+         JOIN conversations c ON c.id = m.conversation_id
+         JOIN sites s ON s.id = c.site_id
+         WHERE m.conversation_id = ? AND s.owner_id = ?
+         ORDER BY m.created_at ASC, m.rowid ASC`,
+      )
+      .all(conversationId, ownerId) as Row[]
   ).map(mapMessage);
 }
 
-export function deleteConversation(db: DB, id: string): boolean {
-  return db.prepare('DELETE FROM conversations WHERE id = ?').run(id).changes > 0;
+export function deleteConversation(db: DB, ownerId: number, id: string): boolean {
+  return (
+    db
+      .prepare(`DELETE FROM conversations WHERE id = ? AND ${OWNED_SITE}`)
+      .run(id, ownerId).changes > 0
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -895,6 +977,7 @@ export function deleteConversation(db: DB, id: string): boolean {
 
 export function addCopyHistory(
   db: DB,
+  ownerId: number,
   input: {
     id: string;
     productId?: number | null;
@@ -902,10 +985,21 @@ export function addCopyHistory(
     outputs: Record<string, unknown>;
   },
 ): CopyHistoryEntry {
+  if (input.productId != null && !getProduct(db, ownerId, input.productId)) {
+    throw new Error('Cannot attach copy history to a product owned by another user');
+  }
   const createdAt = nowIso();
   db.prepare(
-    'INSERT INTO copy_history (id, product_id, params, outputs, created_at) VALUES (?, ?, ?, ?, ?)',
-  ).run(input.id, input.productId ?? null, JSON.stringify(input.params), JSON.stringify(input.outputs), createdAt);
+    `INSERT INTO copy_history (owner_id, id, product_id, params, outputs, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(
+    ownerId,
+    input.id,
+    input.productId ?? null,
+    JSON.stringify(input.params),
+    JSON.stringify(input.outputs),
+    createdAt,
+  );
   return {
     id: input.id,
     productId: input.productId ?? null,
@@ -927,23 +1021,31 @@ function mapCopyHistory(row: Row): CopyHistoryEntry {
 
 export function listCopyHistory(
   db: DB,
+  ownerId: number,
   options: { limit?: number; productId?: number } = {},
 ): CopyHistoryEntry[] {
-  const where = options.productId ? 'WHERE product_id = ?' : '';
-  const params: unknown[] = options.productId ? [options.productId] : [];
+  const where = ['owner_id = ?'];
+  const params: unknown[] = [ownerId];
+  if (options.productId) {
+    where.push('product_id = ?');
+    params.push(options.productId);
+  }
   const limit = Math.min(Math.max(options.limit ?? 20, 1), 100);
   params.push(limit);
   return (
     db
-      .prepare(`SELECT * FROM copy_history ${where} ORDER BY created_at DESC LIMIT ?`)
+      .prepare(
+        `SELECT * FROM copy_history WHERE ${where.join(' AND ')}
+         ORDER BY created_at DESC LIMIT ?`,
+      )
       .all(...params) as Row[]
   ).map(mapCopyHistory);
 }
 
-export function getCopyHistory(db: DB, id: string): CopyHistoryEntry | null {
-  const row = db.prepare('SELECT * FROM copy_history WHERE id = ?').get(id) as
-    | Record<string, unknown>
-    | undefined;
+export function getCopyHistory(db: DB, ownerId: number, id: string): CopyHistoryEntry | null {
+  const row = db
+    .prepare('SELECT * FROM copy_history WHERE id = ? AND owner_id = ?')
+    .get(id, ownerId) as Record<string, unknown> | undefined;
   return row ? mapCopyHistory(row) : null;
 }
 

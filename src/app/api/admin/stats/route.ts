@@ -21,5 +21,5 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     rangeDays = parsed;
   }
 
-  return NextResponse.json(getStats(getDb(), { rangeDays }));
+  return NextResponse.json(getStats(getDb(), auth.user.id, { rangeDays }));
 }

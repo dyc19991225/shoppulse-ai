@@ -93,6 +93,7 @@ function enabledOnlyDefault(options: RetrievalOptions): boolean {
 /** Ranks enabled KB entries against `query`, returning the best `limit`. */
 export function retrieveKnowledge(
   db: DB,
+  ownerId: number,
   query: string,
   options: RetrievalOptions = {},
 ): Scored<KbEntry>[] {
@@ -101,7 +102,7 @@ export function retrieveKnowledge(
   const queryTokens = tokenize(normalizedQuery);
   if (queryTokens.length === 0) return [];
 
-  const entries = listKbEntries(db, { enabledOnly: enabledOnlyDefault(options) });
+  const entries = listKbEntries(db, ownerId, { enabledOnly: enabledOnlyDefault(options) });
   const scored: Scored<KbEntry>[] = [];
 
   for (const entry of entries) {
@@ -121,6 +122,7 @@ export function retrieveKnowledge(
 /** Ranks enabled products against `query`, returning the best `limit`. */
 export function retrieveProducts(
   db: DB,
+  ownerId: number,
   query: string,
   options: RetrievalOptions & { fallback?: boolean } = {},
 ): Scored<Product>[] {
@@ -128,7 +130,7 @@ export function retrieveProducts(
   const normalizedQuery = query.trim().toLowerCase().normalize('NFKC');
   const queryTokens = tokenize(normalizedQuery);
 
-  const products = listProducts(db, { enabledOnly: enabledOnlyDefault(options) });
+  const products = listProducts(db, ownerId, { enabledOnly: enabledOnlyDefault(options) });
   const scored: Scored<Product>[] = [];
 
   if (queryTokens.length > 0) {
@@ -175,15 +177,16 @@ export interface RetrievalResult {
 /** Convenience wrapper used by the chat pipeline. */
 export function retrieve(
   db: DB,
+  ownerId: number,
   query: string,
   options: { knowledgeLimit?: number; productLimit?: number; includeProducts?: boolean } = {},
 ): RetrievalResult {
   return {
-    knowledge: retrieveKnowledge(db, query, { limit: options.knowledgeLimit ?? 4 }),
+    knowledge: retrieveKnowledge(db, ownerId, query, { limit: options.knowledgeLimit ?? 4 }),
     products:
       options.includeProducts === false
         ? []
-        : retrieveProducts(db, query, {
+        : retrieveProducts(db, ownerId, query, {
             limit: options.productLimit ?? 3,
             fallback: true,
           }),

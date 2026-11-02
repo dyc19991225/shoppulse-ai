@@ -255,6 +255,7 @@ export interface ImportOptions {
  */
 export function importProducts(
   db: DB,
+  ownerId: number,
   parsed: ParseResult,
   options: ImportOptions = {},
 ): ImportResult {
@@ -348,7 +349,7 @@ export function importProducts(
       try {
         if (options.dryRun) {
           if (input.sku) {
-            if (getProductBySku(db, input.sku)) result.updated += 1;
+            if (getProductBySku(db, ownerId, input.sku)) result.updated += 1;
             else result.created += 1;
           } else {
             result.created += 1;
@@ -357,13 +358,15 @@ export function importProducts(
         }
 
         // Nested transaction => savepoint: a failed row affects only itself.
+        // SKU upserts are per owner: another owner's row with the same SKU is
+        // left untouched and a separate product is created here.
         const applyRow = db.transaction(() => {
-          const existing = input.sku ? getProductBySku(db, input.sku) : null;
+          const existing = input.sku ? getProductBySku(db, ownerId, input.sku) : null;
           if (existing) {
-            updateProduct(db, existing.id, input);
+            updateProduct(db, ownerId, existing.id, input);
             return 'updated' as const;
           }
-          createProduct(db, input);
+          createProduct(db, ownerId, input);
           return 'created' as const;
         });
         if (applyRow() === 'updated') result.updated += 1;
@@ -385,6 +388,7 @@ export function importProducts(
 /** Parses raw upload bytes then imports them. */
 export async function importProductsFromFile(
   db: DB,
+  ownerId: number,
   filename: string,
   bytes: Uint8Array,
   options: ImportOptions = {},
@@ -398,7 +402,7 @@ export async function importProductsFromFile(
 
   const format = detectFormat(filename, bytes);
   const parsed = format === 'xlsx' ? await parseXlsx(bytes) : parseCsv(decodeCsv(bytes));
-  return importProducts(db, parsed, options);
+  return importProducts(db, ownerId, parsed, options);
 }
 
 /** CSV template content (with BOM so Excel opens it as UTF-8). */

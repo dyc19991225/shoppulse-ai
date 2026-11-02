@@ -25,7 +25,7 @@ export async function GET(request: NextRequest, { params }: Params): Promise<Nex
 
   const id = parseId(params.id);
   if (!id) return jsonError(400, 'invalid_id');
-  const product = getProduct(getDb(), id);
+  const product = getProduct(getDb(), auth.user.id, id);
   return product ? NextResponse.json({ item: product }) : jsonError(404, 'not_found');
 }
 
@@ -92,7 +92,7 @@ export async function PUT(request: NextRequest, { params }: Params): Promise<Nex
   if (Object.keys(updates).length === 0) return jsonError(400, 'no_updates');
 
   try {
-    const product = updateProduct(getDb(), id, updates);
+    const product = updateProduct(getDb(), auth.user.id, id, updates);
     return product ? NextResponse.json({ item: product }) : jsonError(404, 'not_found');
   } catch (error) {
     if (isUniqueSkuError(error)) return jsonError(409, 'duplicate_sku');
@@ -106,7 +106,7 @@ export async function DELETE(request: NextRequest, { params }: Params): Promise<
 
   const id = parseId(params.id);
   if (!id) return jsonError(400, 'invalid_id');
-  return deleteProduct(getDb(), id)
+  return deleteProduct(getDb(), auth.user.id, id)
     ? NextResponse.json({ ok: true })
     : jsonError(404, 'not_found');
 }

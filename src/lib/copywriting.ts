@@ -539,10 +539,11 @@ export function finalizePlatformCopy(
  */
 export async function generateCopywriting(
   db: DB,
+  ownerId: number,
   provider: LlmProvider,
   input: CopywriteInput,
 ): Promise<CopywriteResult> {
-  const product = getProduct(db, input.productId);
+  const product = getProduct(db, ownerId, input.productId);
   if (!product) throw new CopywriteError('product_not_found');
 
   const sellingPoints =
@@ -603,7 +604,7 @@ export async function generateCopywriting(
   }
 
   const historyId = randomUUID();
-  addCopyHistory(db, {
+  addCopyHistory(db, ownerId, {
     id: historyId,
     productId: product.id,
     params: {

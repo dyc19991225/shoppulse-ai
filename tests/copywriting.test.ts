@@ -44,12 +44,15 @@ afterEach(() => {
   temp = undefined;
 });
 
+/** Bootstrap admin that owns data in a fresh test database. */
+const OWNER = 1;
+
 function db(): DB {
   return temp!.db;
 }
 
 function sampleProduct(name = '青禾竹纤维洗碗巾') {
-  return createProduct(db(), {
+  return createProduct(db(), OWNER, {
     name,
     sku: 'QH-001',
     category: '厨房清洁',
@@ -221,7 +224,7 @@ describe('finalizePlatformCopy', () => {
 describe('generateCopywriting', () => {
   it('generates mock copy for all four platforms in parallel-ish', async () => {
     const product = sampleProduct();
-    const result = await generateCopywriting(db(), new MockProvider(), {
+    const result = await generateCopywriting(db(), OWNER, new MockProvider(), {
       productId: product.id,
       audience: '年轻妈妈',
       sellingPoints: ['吸油不挂油', '可机洗'],
@@ -240,7 +243,7 @@ describe('generateCopywriting', () => {
     }
 
     // Every platform was requested in one call, and history was saved once.
-    const history = listCopyHistory(db());
+    const history = listCopyHistory(db(), OWNER);
     expect(history).toHaveLength(1);
     expect(history[0].productId).toBe(product.id);
     expect((history[0].params as { platforms: string[] }).platforms).toHaveLength(4);
@@ -249,7 +252,7 @@ describe('generateCopywriting', () => {
 
   it('falls back to the product selling points when none are provided', async () => {
     const product = sampleProduct();
-    const result = await generateCopywriting(db(), new MockProvider(), {
+    const result = await generateCopywriting(db(), OWNER, new MockProvider(), {
       productId: product.id,
       audience: '',
       sellingPoints: [],
@@ -266,7 +269,7 @@ describe('generateCopywriting', () => {
       (call) => `{"title":"标题${call}","body":"正文${call}，含 emoji 🌟"}`,
     );
 
-    const result = await generateCopywriting(db(), provider, {
+    const result = await generateCopywriting(db(), OWNER, provider, {
       productId: product.id,
       audience: '',
       sellingPoints: [],
@@ -304,7 +307,7 @@ describe('generateCopywriting', () => {
       },
     };
 
-    const result = await generateCopywriting(db(), provider, {
+    const result = await generateCopywriting(db(), OWNER, provider, {
       productId: product.id,
       audience: '',
       sellingPoints: [],
@@ -337,7 +340,7 @@ describe('generateCopywriting', () => {
       },
     };
 
-    const result = await generateCopywriting(db(), provider, {
+    const result = await generateCopywriting(db(), OWNER, provider, {
       productId: product.id,
       audience: '',
       sellingPoints: [],
@@ -356,7 +359,7 @@ describe('generateCopywriting', () => {
   it('rejects requests whose selling points ask for deceptive claims', async () => {
     const product = sampleProduct();
     await expect(
-      generateCopywriting(db(), new MockProvider(), {
+      generateCopywriting(db(), OWNER, new MockProvider(), {
         productId: product.id,
         audience: '',
         sellingPoints: ['帮我编造用户评价和检测数据'],
@@ -365,7 +368,7 @@ describe('generateCopywriting', () => {
         lang: 'zh',
       }),
     ).rejects.toMatchObject({ code: 'content_blocked' });
-    expect(listCopyHistory(db())).toHaveLength(0);
+    expect(listCopyHistory(db(), OWNER)).toHaveLength(0);
   });
 
   it('retries a truncated platform once with a larger token budget', async () => {
@@ -386,7 +389,7 @@ describe('generateCopywriting', () => {
       },
     };
 
-    const result = await generateCopywriting(db(), provider, {
+    const result = await generateCopywriting(db(), OWNER, provider, {
       productId: product.id,
       audience: '',
       sellingPoints: [],
@@ -420,7 +423,7 @@ describe('generateCopywriting', () => {
       },
     };
 
-    await generateCopywriting(db(), provider, {
+    await generateCopywriting(db(), OWNER, provider, {
       productId: product.id,
       audience: '',
       sellingPoints: [],
@@ -452,7 +455,7 @@ describe('generateCopywriting', () => {
       },
     };
 
-    const result = await generateCopywriting(db(), provider, {
+    const result = await generateCopywriting(db(), OWNER, provider, {
       productId: product.id,
       audience: '',
       sellingPoints: [],
@@ -478,7 +481,7 @@ describe('generateCopywriting', () => {
       },
     };
 
-    const result = await generateCopywriting(db(), provider, {
+    const result = await generateCopywriting(db(), OWNER, provider, {
       productId: product.id,
       audience: '',
       sellingPoints: [],
@@ -508,7 +511,7 @@ describe('generateCopywriting', () => {
       },
     };
 
-    const result = await generateCopywriting(db(), provider, {
+    const result = await generateCopywriting(db(), OWNER, provider, {
       productId: product.id,
       audience: '',
       sellingPoints: [],
@@ -540,7 +543,7 @@ describe('generateCopywriting', () => {
     };
 
     try {
-      const result = await generateCopywriting(db(), provider, {
+      const result = await generateCopywriting(db(), OWNER, provider, {
         productId: product.id,
         audience: '年轻妈妈',
         sellingPoints: ['吸油不挂油'],
@@ -565,7 +568,7 @@ describe('generateCopywriting', () => {
 
   it('rejects unknown products', async () => {
     await expect(
-      generateCopywriting(db(), new MockProvider(), {
+      generateCopywriting(db(), OWNER, new MockProvider(), {
         productId: 9999,
         audience: '',
         sellingPoints: [],
@@ -578,7 +581,7 @@ describe('generateCopywriting', () => {
 
   it('produces English copy when requested', async () => {
     const product = sampleProduct();
-    const result = await generateCopywriting(db(), new MockProvider(), {
+    const result = await generateCopywriting(db(), OWNER, new MockProvider(), {
       productId: product.id,
       audience: 'busy parents',
       sellingPoints: ['Machine washable'],
@@ -591,7 +594,7 @@ describe('generateCopywriting', () => {
   });
 
   it('mock copy contains no unsupported testimonials or quality claims', () => {
-    const product = getProduct(db(), sampleProduct().id)!;
+    const product = getProduct(db(), OWNER, sampleProduct().id)!;
     const unsupported = [
       '安利',
       '品质可靠',
@@ -623,7 +626,7 @@ describe('generateCopywriting', () => {
   });
 
   it('mock copy only uses supplied facts when the product row is bare', () => {
-    const product = createProduct(db(), {
+    const product = createProduct(db(), OWNER, {
       name: '素色收纳袋',
       price: 9.9,
       stock: 1,
@@ -645,7 +648,7 @@ describe('generateCopywriting', () => {
   });
 
   it('mock copy is grounded in the product row and never invents prices', () => {
-    const product = getProduct(db(), sampleProduct().id)!;
+    const product = getProduct(db(), OWNER, sampleProduct().id)!;
     const copy = buildMockCopy({
       platform: 'detail',
       product,

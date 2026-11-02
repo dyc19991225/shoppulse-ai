@@ -17,6 +17,9 @@ import {
 } from '@/lib/importer';
 import { createTempDb, type TempDb } from './helpers/tempdb';
 
+/** Bootstrap admin that owns data in a fresh test database. */
+const OWNER = 1;
+
 let temp: TempDb | undefined;
 
 afterEach(() => {
@@ -134,10 +137,10 @@ describe('importProducts', () => {
         '收纳箱,QH-101,收纳,49.9,5,加厚,省空间,,',
       ].join('\n'),
     );
-    const result = importProducts(db, parsed);
+    const result = importProducts(db, OWNER, parsed);
     expect(result).toMatchObject({ created: 2, updated: 0, failed: 0, total: 2 });
 
-    const product = getProductBySku(db, 'QH-100')!;
+    const product = getProductBySku(db, OWNER, 'QH-100')!;
     expect(product).toMatchObject({
       name: '洗碗巾',
       category: '厨房',
@@ -150,16 +153,17 @@ describe('importProducts', () => {
 
   it('upserts by SKU', () => {
     const db = setup();
-    createProduct(db, { sku: 'QH-200', name: '旧名称', price: 10 });
+    createProduct(db, OWNER, { sku: 'QH-200', name: '旧名称', price: 10 });
 
     const result = importProducts(
       db,
+      OWNER,
       parseCsv('name,sku,price\n新名称,QH-200,19.9\n全新商品,QH-201,5\n'),
     );
     expect(result).toMatchObject({ created: 1, updated: 1, failed: 0 });
-    expect(getProductBySku(db, 'QH-200')!.name).toBe('新名称');
-    expect(getProductBySku(db, 'QH-200')!.price).toBe(19.9);
-    expect(listProducts(db)).toHaveLength(2);
+    expect(getProductBySku(db, OWNER, 'QH-200')!.name).toBe('新名称');
+    expect(getProductBySku(db, OWNER, 'QH-200')!.price).toBe(19.9);
+    expect(listProducts(db, OWNER)).toHaveLength(2);
   });
 
   it('collects per-row errors without aborting', () => {
@@ -174,11 +178,11 @@ describe('importProducts', () => {
         '坏链接,QH-304,10,1,javascript:alert(1)',
       ].join('\n'),
     );
-    const result = importProducts(db, parsed);
+    const result = importProducts(db, OWNER, parsed);
     expect(result).toMatchObject({ created: 1, updated: 0, failed: 4, total: 5 });
     expect(result.errors.map((error) => error.row)).toEqual([3, 4, 5, 6]);
-    expect(getProductBySku(db, 'QH-300')).not.toBeNull();
-    expect(getProductBySku(db, 'QH-302')).toBeNull();
+    expect(getProductBySku(db, OWNER, 'QH-300')).not.toBeNull();
+    expect(getProductBySku(db, OWNER, 'QH-302')).toBeNull();
   });
 
   it('uses per-row savepoints so a database error cannot roll back counted rows', () => {
@@ -187,43 +191,45 @@ describe('importProducts', () => {
       `CREATE TRIGGER fail_boom BEFORE INSERT ON products
        WHEN NEW.name = 'BOOM' BEGIN SELECT RAISE(ABORT, 'forced'); END;`,
     );
-    const result = importProducts(db, parseCsv('name,sku\nA,S1\nBOOM,S2\nC,S3\n'));
+    const result = importProducts(db, OWNER, parseCsv('name,sku\nA,S1\nBOOM,S2\nC,S3\n'));
 
     expect(result).toMatchObject({ created: 2, failed: 1, total: 3 });
     expect(result.errors).toEqual([{ row: 3, message: 'forced' }]);
     // Both successfully counted rows really exist after the transaction.
-    expect(getProductBySku(db, 'S1')?.name).toBe('A');
-    expect(getProductBySku(db, 'S3')?.name).toBe('C');
-    expect(getProductBySku(db, 'S2')).toBeNull();
+    expect(getProductBySku(db, OWNER, 'S1')?.name).toBe('A');
+    expect(getProductBySku(db, OWNER, 'S3')?.name).toBe('C');
+    expect(getProductBySku(db, OWNER, 'S2')).toBeNull();
   });
 
   it('requires a name column', () => {
     const db = setup();
-    expect(() => importProducts(db, parseCsv('sku,price\nQH-1,10\n'))).toThrow(
+    expect(() => importProducts(db, OWNER, parseCsv('sku,price\nQH-1,10\n'))).toThrow(
       /Missing name column/,
     );
   });
 
   it('supports dry runs without writing', () => {
     const db = setup();
-    createProduct(db, { sku: 'QH-400', name: 'existing' });
+    createProduct(db, OWNER, { sku: 'QH-400', name: 'existing' });
     const result = importProducts(
       db,
+      OWNER,
       parseCsv('name,sku\nupdated,QH-400\nnew,QH-401\n'),
       { dryRun: true },
     );
     expect(result).toMatchObject({ created: 1, updated: 1 });
-    expect(getProductBySku(db, 'QH-401')).toBeNull();
+    expect(getProductBySku(db, OWNER, 'QH-401')).toBeNull();
   });
 
   it('parses enabled/disabled status aliases', () => {
     const db = setup();
     importProducts(
       db,
+      OWNER,
       parseCsv('name,sku,enabled\n上架商品,QH-500,是\n下架商品,QH-501,停用\n'),
     );
-    expect(getProductBySku(db, 'QH-500')!.enabled).toBe(true);
-    expect(getProductBySku(db, 'QH-501')!.enabled).toBe(false);
+    expect(getProductBySku(db, OWNER, 'QH-500')!.enabled).toBe(true);
+    expect(getProductBySku(db, OWNER, 'QH-501')!.enabled).toBe(false);
   });
 
   it('rejects files with more than the row limit', () => {
@@ -231,7 +237,7 @@ describe('importProducts', () => {
     const rows = ['name,sku'];
     for (let i = 0; i <= MAX_IMPORT_ROWS; i += 1) rows.push(`p${i},S${i}`);
     const parsed = parseCsv(rows.join('\n'));
-    expect(() => importProducts(db, parsed)).toThrow(/5000/);
+    expect(() => importProducts(db, OWNER, parsed)).toThrow(/5000/);
   });
 });
 
@@ -242,25 +248,25 @@ describe('importProductsFromFile', () => {
       ['名称', 'SKU', '价格', '库存'],
       ['山茶花洗护套装', 'QH-600', 89, 12],
     ]);
-    const result = await importProductsFromFile(db, 'products.xlsx', bytes);
+    const result = await importProductsFromFile(db, OWNER, 'products.xlsx', bytes);
     expect(result).toMatchObject({ created: 1, failed: 0 });
-    expect(getProductBySku(db, 'QH-600')!.price).toBe(89);
+    expect(getProductBySku(db, OWNER, 'QH-600')!.price).toBe(89);
   });
 
   it('imports CSV uploads with a BOM', async () => {
     const db = setup();
     const bytes = new TextEncoder().encode('﻿名称,SKU,价格\n折叠箱,QH-700,49.9\n');
-    const result = await importProductsFromFile(db, 'products.csv', bytes);
+    const result = await importProductsFromFile(db, OWNER, 'products.csv', bytes);
     expect(result.created).toBe(1);
   });
 
   it('rejects oversized and empty files', async () => {
     const db = setup();
     await expect(
-      importProductsFromFile(db, 'big.csv', new Uint8Array(MAX_IMPORT_BYTES + 1)),
+      importProductsFromFile(db, OWNER, 'big.csv', new Uint8Array(MAX_IMPORT_BYTES + 1)),
     ).rejects.toMatchObject({ code: 'file_too_large' });
     await expect(
-      importProductsFromFile(db, 'empty.csv', new Uint8Array()),
+      importProductsFromFile(db, OWNER, 'empty.csv', new Uint8Array()),
     ).rejects.toMatchObject({ code: 'invalid_file' });
   });
 });
@@ -271,8 +277,8 @@ describe('csvTemplate', () => {
     const template = csvTemplate();
     expect(template.startsWith('﻿')).toBe(true);
     const parsed = parseCsv(template.slice(1));
-    const result = importProducts(db, parsed);
+    const result = importProducts(db, OWNER, parsed);
     expect(result.created).toBe(1);
-    expect(getProductBySku(db, 'QH-001')).not.toBeNull();
+    expect(getProductBySku(db, OWNER, 'QH-001')).not.toBeNull();
   });
 });

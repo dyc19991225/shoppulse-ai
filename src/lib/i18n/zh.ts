@@ -139,6 +139,8 @@ export const zh = {
 
   'admin.console': '商家后台',
   'admin.signedInAs': '当前登录：{user}',
+  'admin.roleAdmin': '管理员',
+  'admin.roleUser': '商家',
   'admin.viewDemo': '查看演示',
   'admin.dashboardTitle': '总览',
   'admin.dashboardSubtitle': '管理知识库、商品与客户会话',
@@ -149,6 +151,7 @@ export const zh = {
   'admin.welcomeBody': '从这里开始配置您的 AI 客服：先补充知识库，再添加商品，最后把挂件嵌入店铺网站。',
   'admin.embedTitle': '嵌入挂件',
   'admin.embedHint': '将下面这段代码放到店铺网页 </body> 之前，即可显示右下角客服挂件。',
+  'admin.embedNoSite': '还没有站点，请先到「站点」页面创建一个。',
 
   'kb.title': '知识库',
   'kb.subtitle': 'AI 客服只会依据这里的资料回答价格、政策与时效问题。',

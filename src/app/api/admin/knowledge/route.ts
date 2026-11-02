@@ -18,7 +18,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   const db = getDb();
   const search = request.nextUrl.searchParams.get('search')?.trim() || undefined;
-  const entries = listKbEntries(db, { search });
+  const entries = listKbEntries(db, auth.user.id, { search });
   return NextResponse.json({ items: entries, total: entries.length });
 }
 
@@ -52,6 +52,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     enabled: asBoolean(body.enabled, true),
   };
 
-  const entry = createKbEntry(getDb(), input);
+  const entry = createKbEntry(getDb(), auth.user.id, input);
   return NextResponse.json({ item: entry }, { status: 201 });
 }

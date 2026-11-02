@@ -44,5 +44,5 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     options.offset = offset;
   }
 
-  return NextResponse.json(listConversations(getDb(), options));
+  return NextResponse.json(listConversations(getDb(), auth.user.id, options));
 }

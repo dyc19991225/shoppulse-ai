@@ -31,7 +31,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   const limitParam = Number(request.nextUrl.searchParams.get('limit') ?? '20');
   const limit = Number.isFinite(limitParam) ? Math.min(Math.max(Math.floor(limitParam), 1), 100) : 20;
-  const items = listCopyHistory(getDb(), { limit });
+  const items = listCopyHistory(getDb(), auth.user.id, { limit });
   return NextResponse.json({ items, total: items.length });
 }
 
@@ -104,7 +104,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   };
 
   try {
-    const result = await generateCopywriting(getDb(), provider, input);
+    const result = await generateCopywriting(getDb(), auth.user.id, provider, input);
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     if (error instanceof CopywriteError) {

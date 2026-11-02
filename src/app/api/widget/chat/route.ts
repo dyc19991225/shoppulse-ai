@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { loadConfig } from '@/lib/config';
-import { getSiteByKey, listSites } from '@/lib/db';
+import { getSiteByKey, listAllAllowedOrigins } from '@/lib/db';
 import { getDb } from '@/lib/db-runtime';
 import { createProvider, LlmError } from '@/lib/llm';
 import {
@@ -180,7 +180,7 @@ export function OPTIONS(request: NextRequest): Response {
   const siteKey = request.nextUrl.searchParams.get('site_key')?.trim() ?? '';
   const origins = siteKey
     ? (getSiteByKey(db, siteKey)?.allowedOrigins ?? [])
-    : listSites(db).flatMap((site) => site.allowedOrigins);
+    : listAllAllowedOrigins(db);
   const cors = checkCors(request.headers.get('origin'), origins);
   const headers = new Headers();
   applyCors(headers, cors);

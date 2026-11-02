@@ -114,7 +114,7 @@ export interface StatsOptions {
   rangeDays?: number;
 }
 
-export function getStats(db: DB, options: StatsOptions = {}): StatsPayload {
+export function getStats(db: DB, ownerId: number, options: StatsOptions = {}): StatsPayload {
   const rangeDays = options.rangeDays ?? STATS_RANGE_DAYS;
   const now = options.now ?? new Date();
   const since = new Date(now.getTime() - rangeDays * 24 * 60 * 60 * 1000).toISOString();
@@ -122,22 +122,28 @@ export function getStats(db: DB, options: StatsOptions = {}): StatsPayload {
   const count = (sql: string, ...params: unknown[]): number =>
     (db.prepare(sql).get(...params) as { count: number } | undefined)?.count ?? 0;
 
+  const ownedConversations = `FROM conversations c JOIN sites s ON s.id = c.site_id
+    WHERE s.owner_id = ?`;
+
   const totals = {
-    conversations: count('SELECT COUNT(*) AS count FROM conversations'),
-    kbEntries: count('SELECT COUNT(*) AS count FROM kb_entries'),
-    products: count('SELECT COUNT(*) AS count FROM products'),
-    copyHistory: count('SELECT COUNT(*) AS count FROM copy_history'),
-    sites: count('SELECT COUNT(*) AS count FROM sites'),
+    conversations: count(`SELECT COUNT(*) AS count ${ownedConversations}`, ownerId),
+    kbEntries: count('SELECT COUNT(*) AS count FROM kb_entries WHERE owner_id = ?', ownerId),
+    products: count('SELECT COUNT(*) AS count FROM products WHERE owner_id = ?', ownerId),
+    copyHistory: count('SELECT COUNT(*) AS count FROM copy_history WHERE owner_id = ?', ownerId),
+    sites: count('SELECT COUNT(*) AS count FROM sites WHERE owner_id = ?', ownerId),
   };
 
+  const recentOwnedConversations = `${ownedConversations} AND c.started_at >= ?`;
   const last7Days = {
-    conversations: count('SELECT COUNT(*) AS count FROM conversations WHERE started_at >= ?', since),
+    conversations: count(`SELECT COUNT(*) AS count ${recentOwnedConversations}`, ownerId, since),
     needsHuman: count(
-      'SELECT COUNT(*) AS count FROM conversations WHERE started_at >= ? AND needs_human = 1',
+      `SELECT COUNT(*) AS count ${recentOwnedConversations} AND c.needs_human = 1`,
+      ownerId,
       since,
     ),
     handled: count(
-      'SELECT COUNT(*) AS count FROM conversations WHERE started_at >= ? AND handled = 1',
+      `SELECT COUNT(*) AS count ${recentOwnedConversations} AND c.handled = 1`,
+      ownerId,
       since,
     ),
   };
@@ -147,12 +153,11 @@ export function getStats(db: DB, options: StatsOptions = {}): StatsPayload {
 
   const intentRows = db
     .prepare(
-      `SELECT top_intent AS intent, COUNT(*) AS count
-       FROM conversations
-       WHERE started_at >= ?
-       GROUP BY top_intent`,
+      `SELECT c.top_intent AS intent, COUNT(*) AS count
+       ${ownedConversations} AND c.started_at >= ?
+       GROUP BY c.top_intent`,
     )
-    .all(since) as { intent: string; count: number }[];
+    .all(ownerId, since) as { intent: string; count: number }[];
   const intentCounts = new Map(intentRows.map((row) => [row.intent, Number(row.count)]));
 
   const intents: IntentStat[] = INTENTS.map((intent) => {
@@ -164,7 +169,7 @@ export function getStats(db: DB, options: StatsOptions = {}): StatsPayload {
     };
   }).sort((a, b) => b.count - a.count);
 
-  const topQuestions = topQuestionTerms(db, since);
+  const topQuestions = topQuestionTerms(db, ownerId, since);
 
   return { rangeDays, since, totals, last7Days, handoffRate, intents, topQuestions };
 }
@@ -172,17 +177,20 @@ export function getStats(db: DB, options: StatsOptions = {}): StatsPayload {
 /** Counts topic terms across recent user messages, most frequent first. */
 export function topQuestionTerms(
   db: DB,
+  ownerId: number,
   since: string,
   limit = TOP_QUESTIONS_LIMIT,
 ): TopQuestion[] {
   const rows = db
     .prepare(
-      `SELECT content FROM messages
-       WHERE role = 'user' AND created_at >= ?
-       ORDER BY created_at DESC
+      `SELECT m.content FROM messages m
+       JOIN conversations c ON c.id = m.conversation_id
+       JOIN sites s ON s.id = c.site_id
+       WHERE m.role = 'user' AND m.created_at >= ? AND s.owner_id = ?
+       ORDER BY m.created_at DESC
        LIMIT 2000`,
     )
-    .all(since) as { content: string }[];
+    .all(since, ownerId) as { content: string }[];
 
   const counts = new Map<string, number>();
   for (const { content } of rows) {

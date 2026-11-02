@@ -1,14 +1,20 @@
 import Link from 'next/link';
+import { cookies } from 'next/headers';
 import { BookOpen, ExternalLink, MessagesSquare, Package, Settings, Sparkles } from 'lucide-react';
 import { getRequestTranslator } from '@/lib/i18n/server';
-import { DEFAULT_SITE_KEY } from '@/lib/db';
+import { listSites } from '@/lib/db';
+import { getDb } from '@/lib/db-runtime';
+import { getCurrentUser } from '@/lib/auth';
+import { SESSION_COOKIE } from '@/lib/auth/session';
 import type { Intent } from '@/lib/intent';
 import { StatsPanel } from '@/components/admin/stats-panel';
 
 export const dynamic = 'force-dynamic';
 
-export default function AdminDashboardPage() {
+export default async function AdminDashboardPage() {
   const t = getRequestTranslator();
+  const user = await getCurrentUser(cookies().get(SESSION_COOKIE)?.value);
+  const siteKey = user ? listSites(getDb(), user.id)[0]?.siteKey : undefined;
 
   const intentLabels = {
     product: t('intent.product'),
@@ -113,9 +119,13 @@ export default function AdminDashboardPage() {
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">{t('admin.embedTitle')}</h2>
         <p className="mt-1 text-sm text-slate-500">{t('admin.embedHint')}</p>
-        <pre className="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs leading-relaxed text-slate-100">
-{`<script src="https://YOUR-DOMAIN/widget.js" data-site-key="${DEFAULT_SITE_KEY}" async></script>`}
-        </pre>
+        {siteKey ? (
+          <pre className="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs leading-relaxed text-slate-100">
+{`<script src="https://YOUR-DOMAIN/widget.js" data-site-key="${siteKey}" async></script>`}
+          </pre>
+        ) : (
+          <p className="mt-4 text-sm text-slate-500">{t('admin.embedNoSite')}</p>
+        )}
         <Link
           href="/demo"
           className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700"

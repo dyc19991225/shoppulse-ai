@@ -23,6 +23,9 @@ import { MockProvider } from '@/lib/llm/mock';
 import type { ChatRequest, CompletionRequest, LlmProvider } from '@/lib/llm/types';
 import { createTempDb, type TempDb } from './helpers/tempdb';
 
+/** Id of the bootstrap admin that owns the seeded default site. */
+const OWNER = 1;
+
 let temp: TempDb | undefined;
 
 afterEach(() => {
@@ -119,13 +122,13 @@ describe('runChat', () => {
 
     const meta = events[0] as Extract<ChatEvent, { event: 'meta' }>;
     expect(meta.data.mock).toBe(true);
-    const messages = listMessages(db, meta.data.conversationId);
+    const messages = listMessages(db, OWNER, meta.data.conversationId);
     expect(messages.map((message) => message.role)).toEqual(['user', 'assistant']);
   });
 
   it('answers from retrieved knowledge with the mock provider', async () => {
     const { db, site } = setup();
-    createKbEntry(db, {
+    createKbEntry(db, OWNER, {
       type: 'policy',
       title: '退换货政策',
       content: '签收后 7 天内可申请无理由退货。',
@@ -138,7 +141,7 @@ describe('runChat', () => {
 
   it('emits DB-backed product cards with real prices', async () => {
     const { db, site } = setup();
-    const product = createProduct(db, {
+    const product = createProduct(db, OWNER, {
       sku: 'QH-1',
       name: '竹纤维洗碗巾',
       price: 29.9,
@@ -168,7 +171,7 @@ describe('runChat', () => {
     expect(handoff?.data.reason).toBe('explicit');
 
     const meta = events[0] as Extract<ChatEvent, { event: 'meta' }>;
-    expect(getConversation(db, meta.data.conversationId)!.needsHuman).toBe(true);
+    expect(getConversation(db, OWNER, meta.data.conversationId)!.needsHuman).toBe(true);
   });
 
   it('refuses illegal requests without calling the model', async () => {
@@ -183,7 +186,7 @@ describe('runChat', () => {
 
   it('keeps multi-turn context for the same conversation', async () => {
     const { db, site } = setup();
-    createKbEntry(db, { title: '物流', content: '48 小时内发货。', keywords: '发货 物流' });
+    createKbEntry(db, OWNER, { title: '物流', content: '48 小时内发货。', keywords: '发货 物流' });
 
     const sharedIds = ids();
     const first = await collect(db, site, '你们的物流多久发货？', undefined, {
@@ -210,7 +213,7 @@ describe('runChat', () => {
       .prepare("INSERT INTO sites (name, site_key, allowed_origins, rate_limit_per_min, created_at) VALUES ('other','other-key','[]',30,'now')")
       .run();
     const otherId = Number(otherSite.lastInsertRowid);
-    createConversation(db, { id: 'foreign', siteId: otherId });
+    createConversation(db, OWNER, { id: 'foreign', siteId: otherId });
 
     const events = await collect(db, site, '你好', undefined, { conversationId: 'foreign' });
     const meta = events[0] as Extract<ChatEvent, { event: 'meta' }>;
@@ -219,7 +222,7 @@ describe('runChat', () => {
 
   it('redacts an invented price before it is emitted or stored', async () => {
     const { db, site } = setup();
-    createProduct(db, { name: '洗碗巾', price: 29.9, stock: 1 });
+    createProduct(db, OWNER, { name: '洗碗巾', price: 29.9, stock: 1 });
 
     const provider = new RecordingProvider('这款洗碗巾现在特价 ¥9.9 哦！');
     const events = await collect(db, site, '洗碗巾多少钱', provider);
@@ -229,14 +232,14 @@ describe('runChat', () => {
     expect(text).toMatch(/价格提示/);
 
     const meta = events[0] as Extract<ChatEvent, { event: 'meta' }>;
-    const stored = listMessages(db, meta.data.conversationId).at(-1)!;
+    const stored = listMessages(db, OWNER, meta.data.conversationId).at(-1)!;
     expect(stored.content).not.toContain('¥9.9');
     expect(stored.content).toContain('金额未核实');
   });
 
   it('does not flag prices that exist in context', async () => {
     const { db, site } = setup();
-    createProduct(db, { name: '洗碗巾', price: 29.9, stock: 1 });
+    createProduct(db, OWNER, { name: '洗碗巾', price: 29.9, stock: 1 });
 
     const provider = new RecordingProvider('这款洗碗巾 ¥29.9。');
     const events = await collect(db, site, '洗碗巾多少钱', provider);
@@ -281,7 +284,7 @@ describe('runChat', () => {
     const events = await collect(db, site, '你好', failing);
     expect(eventTypes(events)).toEqual(['meta', 'delta', 'error']);
     const meta = events[0] as Extract<ChatEvent, { event: 'meta' }>;
-    const messages = listMessages(db, meta.data.conversationId);
+    const messages = listMessages(db, OWNER, meta.data.conversationId);
     expect(messages).toHaveLength(1);
     expect(messages[0].role).toBe('user');
   });
@@ -298,28 +301,28 @@ describe('runChat', () => {
     const { db, site } = setup();
     const events = await collect(db, site, '我要退货');
     const meta = events[0] as Extract<ChatEvent, { event: 'meta' }>;
-    const [userMessage] = listMessages(db, meta.data.conversationId);
+    const [userMessage] = listMessages(db, OWNER, meta.data.conversationId);
     expect(userMessage.intent).toBe('after_sale');
-    expect(getConversation(db, meta.data.conversationId)!.topIntent).toBe('after_sale');
+    expect(getConversation(db, OWNER, meta.data.conversationId)!.topIntent).toBe('after_sale');
   });
 
   it('resumes an existing conversation only with the matching visitor id', async () => {
     const { db, site } = setup();
-    createConversation(db, { id: 'existing', siteId: site.id, visitorId: 'v-owner' });
-    addMessage(db, { id: 'u1', conversationId: 'existing', role: 'user', content: 'hi' });
+    createConversation(db, OWNER, { id: 'existing', siteId: site.id, visitorId: 'v-owner' });
+    addMessage(db, OWNER, { id: 'u1', conversationId: 'existing', role: 'user', content: 'hi' });
 
     const events = await collect(db, site, '你好', undefined, {
       conversationId: 'existing',
       visitorId: 'v-owner',
     });
     expect((events[0] as Extract<ChatEvent, { event: 'meta' }>).data.conversationId).toBe('existing');
-    expect(listMessages(db, 'existing')).toHaveLength(3);
+    expect(listMessages(db, OWNER, 'existing')).toHaveLength(3);
   });
 
   it('refuses to resume a conversation without a matching nonempty visitor id', async () => {
     const { db, site } = setup();
-    createConversation(db, { id: 'victim', siteId: site.id, visitorId: 'v-victim' });
-    addMessage(db, { id: 'u1', conversationId: 'victim', role: 'user', content: 'secret history' });
+    createConversation(db, OWNER, { id: 'victim', siteId: site.id, visitorId: 'v-victim' });
+    addMessage(db, OWNER, { id: 'u1', conversationId: 'victim', role: 'user', content: 'secret history' });
 
     for (const [attempt, visitorId] of [undefined, null, '', 'v-attacker'].entries()) {
       const provider = new RecordingProvider('hello');
@@ -333,7 +336,7 @@ describe('runChat', () => {
       // The model never sees the victim's history.
       expect(JSON.stringify(provider.lastMessages)).not.toContain('secret history');
     }
-    expect(listMessages(db, 'victim')).toHaveLength(1);
+    expect(listMessages(db, OWNER, 'victim')).toHaveLength(1);
   });
 
 });

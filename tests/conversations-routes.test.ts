@@ -16,6 +16,9 @@ import { adminSessionCookie, TEST_SESSION_SECRET } from './helpers/auth';
 
 let temp: TempDb | undefined;
 
+/** Bootstrap admin that owns data in a fresh test database. */
+const OWNER = 1;
+
 beforeEach(() => {
   temp = createTempDb();
   vi.stubEnv('SHOPPULSE_DB_PATH', temp.path);
@@ -47,21 +50,21 @@ function getRequest(url: string): NextRequest {
 
 function seedConversations() {
   const site = getSiteByKey(db(), DEFAULT_SITE_KEY)!;
-  const second = createSite(db(), {
+  const second = createSite(db(), OWNER, {
     name: '独立站',
     siteKey: 'second-site-key',
     allowedOrigins: ['https://shop.example.com'],
     rateLimitPerMin: 20,
   });
 
-  createConversation(db(), { id: 'c1', siteId: site.id, visitorId: 'v1', topIntent: 'price' });
-  createConversation(db(), { id: 'c2', siteId: second.id, visitorId: 'v2', topIntent: 'after_sale' });
+  createConversation(db(), OWNER, { id: 'c1', siteId: site.id, visitorId: 'v1', topIntent: 'price' });
+  createConversation(db(), OWNER, { id: 'c2', siteId: second.id, visitorId: 'v2', topIntent: 'after_sale' });
   updateHandled('c2', true);
   db().prepare('UPDATE conversations SET needs_human = 1 WHERE id = ?').run('c2');
 
-  addMessage(db(), { id: 'm1', conversationId: 'c1', role: 'user', content: '这个多少钱？', intent: 'price' });
-  addMessage(db(), { id: 'm2', conversationId: 'c1', role: 'assistant', content: '参考价 ¥29.90。' });
-  addMessage(db(), { id: 'm3', conversationId: 'c2', role: 'user', content: '我要退货' });
+  addMessage(db(), OWNER, { id: 'm1', conversationId: 'c1', role: 'user', content: '这个多少钱？', intent: 'price' });
+  addMessage(db(), OWNER, { id: 'm2', conversationId: 'c1', role: 'assistant', content: '参考价 ¥29.90。' });
+  addMessage(db(), OWNER, { id: 'm3', conversationId: 'c2', role: 'user', content: '我要退货' });
   return { site, second };
 }
 

@@ -23,6 +23,9 @@ import { adminSessionCookie, TEST_SESSION_SECRET } from './helpers/auth';
 
 let temp: TempDb | undefined;
 
+/** Bootstrap admin that owns data in a fresh test database. */
+const OWNER = 1;
+
 beforeEach(() => {
   temp = createTempDb();
   vi.stubEnv('SHOPPULSE_DB_PATH', temp.path);
@@ -44,19 +47,19 @@ function db(): DB {
 
 function seed() {
   const site = getSiteByKey(db(), DEFAULT_SITE_KEY)!;
-  createKbEntry(db(), { title: '退换货政策', content: '7 天退货' });
-  createProduct(db(), { name: '洗碗巾', price: 29.9 });
-  addCopyHistory(db(), { id: 'h1', params: {}, outputs: {} });
+  createKbEntry(db(), OWNER, { title: '退换货政策', content: '7 天退货' });
+  createProduct(db(), OWNER, { name: '洗碗巾', price: 29.9 });
+  addCopyHistory(db(), OWNER, { id: 'h1', params: {}, outputs: {} });
 
   const intents = ['price', 'price', 'after_sale', 'handoff', 'other'];
   intents.forEach((intent, index) => {
-    createConversation(db(), {
+    createConversation(db(), OWNER, {
       id: `c${index}`,
       siteId: site.id,
       visitorId: `v${index}`,
       topIntent: intent,
     });
-    addMessage(db(), {
+    addMessage(db(), OWNER, {
       id: `m${index}`,
       conversationId: `c${index}`,
       role: 'user',
@@ -71,7 +74,7 @@ function seed() {
 describe('getStats', () => {
   it('summarizes totals, 7-day volume, handoffs and intents', () => {
     seed();
-    const stats = getStats(db());
+    const stats = getStats(db(), OWNER);
 
     expect(stats.rangeDays).toBe(STATS_RANGE_DAYS);
     expect(stats.totals).toEqual({
@@ -98,19 +101,19 @@ describe('getStats', () => {
     seed();
     // A conversation older than the range must not be counted.
     const site = getSiteByKey(db(), DEFAULT_SITE_KEY)!;
-    createConversation(db(), { id: 'old', siteId: site.id, topIntent: 'price' });
+    createConversation(db(), OWNER, { id: 'old', siteId: site.id, topIntent: 'price' });
     db()
       .prepare('UPDATE conversations SET started_at = ? WHERE id = ?')
       .run('2020-01-01T00:00:00.000Z', 'old');
 
-    const stats = getStats(db());
+    const stats = getStats(db(), OWNER);
     expect(stats.last7Days.conversations).toBe(5);
     expect(stats.intents.find((item) => item.intent === 'price')!.count).toBe(2);
     expect(stats.totals.conversations).toBe(6);
   });
 
   it('returns zeroed shares when there is no data', () => {
-    const stats = getStats(db());
+    const stats = getStats(db(), OWNER);
     expect(stats.last7Days).toEqual({ conversations: 0, needsHuman: 0, handled: 0 });
     expect(stats.handoffRate).toBe(0);
     expect(stats.intents.every((item) => item.share === 0)).toBe(true);
@@ -119,7 +122,7 @@ describe('getStats', () => {
 
   it('supports a custom range', () => {
     seed();
-    const stats = getStats(db(), { rangeDays: 3650 });
+    const stats = getStats(db(), OWNER, { rangeDays: 3650 });
     expect(stats.rangeDays).toBe(3650);
     expect(stats.last7Days.conversations).toBe(5);
   });
@@ -128,13 +131,13 @@ describe('getStats', () => {
 describe('topQuestionTerms', () => {
   it('ranks topic terms and filters stop words', () => {
     seed();
-    addMessage(db(), {
+    addMessage(db(), OWNER, {
       id: 'extra-1',
       conversationId: 'c0',
       role: 'user',
       content: '洗碗巾多少钱，请问有优惠吗',
     });
-    const terms = topQuestionTerms(db(), '2000-01-01T00:00:00.000Z');
+    const terms = topQuestionTerms(db(), OWNER, '2000-01-01T00:00:00.000Z');
     expect(terms.length).toBeGreaterThan(0);
     const byTerm = new Map(terms.map((term) => [term.term, term.count]));
     expect(byTerm.get('洗碗')).toBe(2);
@@ -143,13 +146,13 @@ describe('topQuestionTerms', () => {
     expect(byTerm.has('你好')).toBe(false);
     expect(byTerm.has('多少')).toBe(false);
     // Assistant messages are ignored.
-    addMessage(db(), {
+    addMessage(db(), OWNER, {
       id: 'assistant-1',
       conversationId: 'c0',
       role: 'assistant',
       content: '洗碗巾参考价 29.9 元',
     });
-    const after = topQuestionTerms(db(), '2000-01-01T00:00:00.000Z');
+    const after = topQuestionTerms(db(), OWNER, '2000-01-01T00:00:00.000Z');
     const afterByTerm = new Map(after.map((term) => [term.term, term.count]));
     expect(afterByTerm.get('洗碗')).toBe(2);
   });

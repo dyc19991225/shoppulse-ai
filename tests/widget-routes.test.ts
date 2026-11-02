@@ -21,6 +21,9 @@ import { createTempDb, type TempDb } from './helpers/tempdb';
 
 let temp: TempDb | undefined;
 
+/** Bootstrap admin that owns data in a fresh test database. */
+const OWNER = 1;
+
 beforeEach(() => {
   temp = createTempDb();
   vi.stubEnv('SHOPPULSE_DB_PATH', temp.path);
@@ -79,7 +82,7 @@ function setRateLimit(limit: number): void {
 
 describe('POST /api/widget/chat', () => {
   it('streams meta, products, deltas and done as SSE', async () => {
-    createProduct(db(), { name: '竹纤维洗碗巾', price: 29.9, stock: 3, sellingPoints: '吸水' });
+    createProduct(db(), OWNER, { name: '竹纤维洗碗巾', price: 29.9, stock: 3, sellingPoints: '吸水' });
 
     const response = await chatPost(chatRequest({ siteKey: DEFAULT_SITE_KEY, message: '洗碗巾多少钱' }));
     expect(response.status).toBe(200);
@@ -120,11 +123,11 @@ describe('POST /api/widget/chat', () => {
       ),
     );
 
-    expect(listMessages(db(), conversationId)).toHaveLength(4);
+    expect(listMessages(db(), OWNER, conversationId)).toHaveLength(4);
   });
 
   it('answers from the knowledge base and sets the locale', async () => {
-    createKbEntry(db(), {
+    createKbEntry(db(), OWNER, {
       type: 'policy',
       title: '退换货政策',
       content: '签收后 7 天内可无理由退货。',
@@ -274,7 +277,7 @@ describe('POST /api/widget/chat', () => {
   it('streams the answer and redacts invented prices before they are sent', async () => {
     // Mock mode quotes only retrieved data, so check the guard via a direct
     // provider-independent assertion on the SSE pipeline using a DB product.
-    createProduct(db(), { name: '洗碗巾', price: 29.9, stock: 1, sellingPoints: '吸水' });
+    createProduct(db(), OWNER, { name: '洗碗巾', price: 29.9, stock: 1, sellingPoints: '吸水' });
     const events = await readSse(
       await chatPost(chatRequest({ siteKey: DEFAULT_SITE_KEY, message: '洗碗巾多少钱' })),
     );
@@ -298,7 +301,7 @@ describe('POST /api/widget/chat', () => {
       await chatPost(chatRequest({ siteKey: DEFAULT_SITE_KEY, message: 'hi', conversationId })),
     );
     expect(hijack[0].data.conversationId).not.toBe(conversationId);
-    expect(listMessages(db(), conversationId)).toHaveLength(2);
+    expect(listMessages(db(), OWNER, conversationId)).toHaveLength(2);
 
     const owner = await readSse(
       await chatPost(
@@ -311,7 +314,7 @@ describe('POST /api/widget/chat', () => {
       ),
     );
     expect(owner[0].data.conversationId).toBe(conversationId);
-    expect(listMessages(db(), conversationId)).toHaveLength(4);
+    expect(listMessages(db(), OWNER, conversationId)).toHaveLength(4);
   });
 
   it('answers OPTIONS preflight', async () => {

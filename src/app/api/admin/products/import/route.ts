@@ -51,7 +51,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const fileBytes = new Uint8Array(await file.arrayBuffer());
   try {
-    const result = await importProductsFromFile(getDb(), name, fileBytes);
+    const result = await importProductsFromFile(getDb(), auth.user.id, name, fileBytes);
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof ImportError) {

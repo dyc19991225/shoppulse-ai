@@ -27,6 +27,9 @@ import { adminSessionCookie, TEST_SESSION_SECRET } from './helpers/auth';
 
 let temp: TempDb | undefined;
 
+/** Bootstrap admin that owns data in a fresh test database. */
+const OWNER = 1;
+
 beforeEach(() => {
   temp = createTempDb();
   vi.stubEnv('SHOPPULSE_DB_PATH', temp.path);
@@ -238,7 +241,7 @@ describe('GET/POST /api/admin/sites', () => {
 
   it('caps the number of sites', async () => {
     for (let index = 0; index < 19; index += 1) {
-      createSite(db(), {
+      createSite(db(), OWNER, {
         name: `s${index}`,
         siteKey: `site-key-${index}`,
         allowedOrigins: [],
@@ -322,7 +325,7 @@ describe('/api/admin/sites/[id]', () => {
   });
 
   it('rejects duplicate keys on update', async () => {
-    createSite(db(), {
+    createSite(db(), OWNER, {
       name: 'other',
       siteKey: 'taken-key-99',
       allowedOrigins: [],
@@ -337,7 +340,7 @@ describe('/api/admin/sites/[id]', () => {
   });
 
   it('deletes sites without conversations and refuses ones with history', async () => {
-    const empty = createSite(db(), {
+    const empty = createSite(db(), OWNER, {
       name: '空站点',
       siteKey: 'empty-site-key',
       allowedOrigins: [],
@@ -346,7 +349,7 @@ describe('/api/admin/sites/[id]', () => {
     expect((await deleteSiteRoute(getRequest('/'), params(empty.id))).status).toBe(200);
 
     const site = getSiteByKey(db(), DEFAULT_SITE_KEY)!;
-    createConversation(db(), { id: 'conv-1', siteId: site.id });
+    createConversation(db(), OWNER, { id: 'conv-1', siteId: site.id });
     const blocked = await deleteSiteRoute(getRequest('/'), params(site.id));
     expect(blocked.status).toBe(409);
     expect((await blocked.json()).error).toBe('site_has_conversations');

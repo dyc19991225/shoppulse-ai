@@ -18,7 +18,7 @@
 ## v0.2 多用户（见 specs/multi-user.md）
 
 - [x] M1 用户表 + 迁移 v2（owner_id、按 owner 的 SKU 唯一、存量归 admin）+ 登录/会话（uid/ver、禁用、env admin 兜底）+ 测试。
-- [ ] M2 所有后台仓储/API/页面/统计/文案按 owner 隔离；挂件按 site.owner_id 检索；隔离测试（猜 ID 返回 404）。
+- [x] M2 所有后台仓储/API/页面/统计/文案按 owner 隔离；挂件按 site.owner_id 检索；隔离测试（猜 ID 返回 404）。
 - [ ] M3 CLI `deploy/user.mjs`（add/list/disable/enable/reset-password，密码只写入 --out 文件 600）+ 测试 + DEPLOY.md 升级步骤（不执行）。
 - [ ] M4 Codex 审查一次 + 修复；本地两用户端到端核验。
 

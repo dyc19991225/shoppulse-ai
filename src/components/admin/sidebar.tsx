@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import type { Locale } from '@/lib/i18n';
+import type { UserRole } from '@/lib/db';
 import { LocaleSwitcher } from '@/components/locale-switcher';
 
 export interface SidebarLabels {
@@ -27,6 +28,8 @@ export interface SidebarLabels {
   sites: string;
   logout: string;
   demo: string;
+  roleAdmin: string;
+  roleUser: string;
 }
 
 const NAV = [
@@ -42,10 +45,12 @@ export function AdminSidebar({
   locale,
   labels,
   username,
+  role,
 }: {
   locale: Locale;
   labels: SidebarLabels;
   username: string;
+  role: UserRole;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -74,7 +79,13 @@ export function AdminSidebar({
       </nav>;
   const footer = <div className="space-y-3 border-t border-slate-100 p-4">
         <div><LocaleSwitcher locale={locale} /></div>
-        <div className="flex items-center justify-between gap-2 text-xs text-slate-500"><span className="truncate" title={username}>{username}</span>
+        <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
+          <span className="flex min-w-0 items-center gap-1.5" title={`${username} · ${labels[role === 'admin' ? 'roleAdmin' : 'roleUser']}`}>
+            <span className="truncate font-medium text-slate-700">{username}</span>
+            <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+              {labels[role === 'admin' ? 'roleAdmin' : 'roleUser']}
+            </span>
+          </span>
           <button type="button" onClick={logout} disabled={loggingOut} className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"><LogOut className="h-3.5 w-3.5" aria-hidden />{labels.logout}</button>
         </div>
       </div>;

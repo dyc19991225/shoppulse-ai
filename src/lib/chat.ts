@@ -172,17 +172,17 @@ function resolveConversation(
   newId: () => string,
 ): { conversationId: string; history: Message[] } {
   if (conversationId) {
-    const existing = getConversation(db, conversationId);
+    const existing = getConversation(db, site.ownerId, conversationId);
     const owned =
       Boolean(existing && existing.visitorId && visitorId) &&
       existing!.visitorId === visitorId;
     if (existing && existing.siteId === site.id && owned) {
-      return { conversationId: existing.id, history: listMessages(db, existing.id) };
+      return { conversationId: existing.id, history: listMessages(db, site.ownerId, existing.id) };
     }
   }
 
   const id = newId();
-  createConversation(db, {
+  createConversation(db, site.ownerId, {
     id,
     siteId: site.id,
     visitorId: visitorId ?? '',
@@ -215,14 +215,14 @@ export async function* runChat(input: ChatInput): AsyncGenerator<ChatEvent, void
 
   // Persist the user turn immediately so analytics see it even if the model
   // fails mid-stream.
-  addMessage(db, {
+  addMessage(db, site.ownerId, {
     id: newId(),
     conversationId,
     role: 'user',
     content: message,
     intent: intentResult.intent,
   });
-  touchConversation(db, conversationId, {
+  touchConversation(db, site.ownerId, conversationId, {
     topIntent: pickTopIntent(history, intentResult.intent),
     ...(handoff.needed ? { needsHuman: true } : {}),
   });
@@ -236,7 +236,7 @@ export async function* runChat(input: ChatInput): AsyncGenerator<ChatEvent, void
   if (!safety.allowed && safety.refusal) {
     const refusal = safety.refusal[locale];
     yield { event: 'delta', data: { text: refusal } };
-    addMessage(db, {
+    addMessage(db, site.ownerId, {
       id: newId(),
       conversationId,
       role: 'assistant',
@@ -247,7 +247,7 @@ export async function* runChat(input: ChatInput): AsyncGenerator<ChatEvent, void
     return;
   }
 
-  const retrieved = retrieve(db, message);
+  const retrieved = retrieve(db, site.ownerId, message);
 
   if (retrieved.products.length > 0) {
     yield {
@@ -318,7 +318,7 @@ export async function* runChat(input: ChatInput): AsyncGenerator<ChatEvent, void
     yield { event: 'delta', data: { text: priceGuardNotice(locale as PriceGuardLocale) } };
   }
 
-  addMessage(db, {
+  addMessage(db, site.ownerId, {
     id: newId(),
     conversationId,
     role: 'assistant',

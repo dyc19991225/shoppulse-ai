@@ -23,7 +23,7 @@ export async function GET(request: NextRequest, { params }: Params): Promise<Nex
 
   const id = parseId(params.id);
   if (!id) return jsonError(400, 'invalid_id');
-  const entry = getKbEntry(getDb(), id);
+  const entry = getKbEntry(getDb(), auth.user.id, id);
   return entry ? NextResponse.json({ item: entry }) : jsonError(404, 'not_found');
 }
 
@@ -65,7 +65,7 @@ export async function PUT(request: NextRequest, { params }: Params): Promise<Nex
 
   if (Object.keys(updates).length === 0) return jsonError(400, 'no_updates');
 
-  const entry = updateKbEntry(getDb(), id, updates);
+  const entry = updateKbEntry(getDb(), auth.user.id, id, updates);
   return entry ? NextResponse.json({ item: entry }) : jsonError(404, 'not_found');
 }
 
@@ -75,7 +75,7 @@ export async function DELETE(request: NextRequest, { params }: Params): Promise<
 
   const id = parseId(params.id);
   if (!id) return jsonError(400, 'invalid_id');
-  return deleteKbEntry(getDb(), id)
+  return deleteKbEntry(getDb(), auth.user.id, id)
     ? NextResponse.json({ ok: true })
     : jsonError(404, 'not_found');
 }

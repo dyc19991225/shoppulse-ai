@@ -21,12 +21,12 @@ export async function GET(request: NextRequest, { params }: Params): Promise<Nex
   if (auth instanceof NextResponse) return auth;
 
   const db = getDb();
-  const conversation = getConversation(db, params.id);
+  const conversation = getConversation(db, auth.user.id, params.id);
   if (!conversation) return jsonError(404, 'not_found');
 
   const siteRow = db
-    .prepare('SELECT name FROM sites WHERE id = ?')
-    .get(conversation.siteId) as { name: string } | undefined;
+    .prepare('SELECT name FROM sites WHERE id = ? AND owner_id = ?')
+    .get(conversation.siteId, auth.user.id) as { name: string } | undefined;
   const messageCount = (
     db
       .prepare('SELECT COUNT(*) AS count FROM messages WHERE conversation_id = ?')
@@ -39,7 +39,10 @@ export async function GET(request: NextRequest, { params }: Params): Promise<Nex
     messageCount,
   };
 
-  return NextResponse.json({ item: summary, messages: listMessages(db, conversation.id) });
+  return NextResponse.json({
+    item: summary,
+    messages: listMessages(db, auth.user.id, conversation.id),
+  });
 }
 
 interface UpdateBody {
@@ -62,8 +65,8 @@ export async function PUT(request: NextRequest, { params }: Params): Promise<Nex
   }
 
   const db = getDb();
-  if (!getConversation(db, params.id)) return jsonError(404, 'not_found');
+  if (!getConversation(db, auth.user.id, params.id)) return jsonError(404, 'not_found');
 
-  setConversationHandled(db, params.id, body.handled);
+  setConversationHandled(db, auth.user.id, params.id, body.handled);
   return NextResponse.json({ ok: true, handled: body.handled });
 }

@@ -20,7 +20,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   const db = getDb();
   const params = request.nextUrl.searchParams;
-  const products = listProducts(db, {
+  const products = listProducts(db, auth.user.id, {
     search: params.get('search')?.trim() || undefined,
     category: params.get('category')?.trim() || undefined,
   });
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   };
 
   try {
-    const product = createProduct(getDb(), input);
+    const product = createProduct(getDb(), auth.user.id, input);
     return NextResponse.json({ item: product }, { status: 201 });
   } catch (error) {
     if (isUniqueSkuError(error)) return jsonError(409, 'duplicate_sku');

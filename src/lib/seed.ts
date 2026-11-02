@@ -73,26 +73,26 @@ const SAMPLE_PRODUCTS = [
   },
 ];
 
-/** Inserts sample KB entries and products. Idempotent for KB by title, products by SKU. */
-export function seedSampleData(db: DB): SeedResult {
+/** Inserts sample KB entries and products for one owner. Idempotent for KB by title, products by SKU. */
+export function seedSampleData(db: DB, ownerId: number): SeedResult {
   let kbInserted = 0;
   let productsInserted = 0;
 
-  const existingKb = new Set(listKbEntries(db).map((entry) => entry.title));
+  const existingKb = new Set(listKbEntries(db, ownerId).map((entry) => entry.title));
   for (const entry of SAMPLE_KB) {
     if (existingKb.has(entry.title)) continue;
-    createKbEntry(db, entry);
+    createKbEntry(db, ownerId, entry);
     kbInserted += 1;
   }
 
   const existingSkus = new Set(
-    listProducts(db)
+    listProducts(db, ownerId)
       .map((product) => product.sku)
       .filter((sku): sku is string => Boolean(sku)),
   );
   for (const product of SAMPLE_PRODUCTS) {
     if (existingSkus.has(product.sku)) continue;
-    createProduct(db, product);
+    createProduct(db, ownerId, product);
     productsInserted += 1;
   }
 

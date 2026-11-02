@@ -24,7 +24,7 @@ export async function GET(request: NextRequest, { params }: Params): Promise<Nex
 
   const id = parseId(params.id);
   if (!id) return jsonError(400, 'invalid_id');
-  const site = getSiteById(getDb(), id);
+  const site = getSiteById(getDb(), auth.user.id, id);
   if (!site) return jsonError(404, 'not_found');
   return NextResponse.json({ item: { ...site, embedSnippet: embedSnippet(site.siteKey, requestBaseUrl(request)) } });
 }
@@ -71,7 +71,7 @@ export async function PUT(request: NextRequest, { params }: Params): Promise<Nex
 
   if (Object.keys(updates).length === 0) return jsonError(400, 'no_updates');
 
-  const site = updateSite(getDb(), id, updates);
+  const site = updateSite(getDb(), auth.user.id, id, updates);
   if (!site) return jsonError(404, 'not_found');
   return NextResponse.json({ item: { ...site, embedSnippet: embedSnippet(site.siteKey, requestBaseUrl(request)) } });
 }
@@ -83,10 +83,10 @@ export async function DELETE(request: NextRequest, { params }: Params): Promise<
   const id = parseId(params.id);
   if (!id) return jsonError(400, 'invalid_id');
   const db = getDb();
-  const site = getSiteById(db, id);
+  const site = getSiteById(db, auth.user.id, id);
   if (!site) return jsonError(404, 'not_found');
   try {
-    if (!deleteSite(db, id)) return jsonError(404, 'not_found');
+    if (!deleteSite(db, auth.user.id, id)) return jsonError(404, 'not_found');
     forgetWidgetRateLimit(site.siteKey);
     return NextResponse.json({ ok: true });
   } catch {

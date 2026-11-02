@@ -20,7 +20,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const auth = await requireAdminApi(request);
   if (auth instanceof NextResponse) return auth;
 
-  const items = listSites(getDb());
+  const items = listSites(getDb(), auth.user.id);
   const base = requestBaseUrl(request);
   return NextResponse.json({
     items: items.map((site) => ({ ...site, embedSnippet: embedSnippet(site.siteKey, base) })),
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (!isValidSiteKey(siteKey)) return jsonError(400, 'invalid_site_key');
 
   const db = getDb();
-  if (listSites(db).length >= MAX_SITES) return jsonError(409, 'too_many_sites');
+  if (listSites(db, auth.user.id).length >= MAX_SITES) return jsonError(409, 'too_many_sites');
 
   const duplicate = db
     .prepare('SELECT id FROM sites WHERE site_key = ?')
@@ -62,7 +62,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (duplicate) return jsonError(409, 'duplicate_site_key');
 
   try {
-    const site = createSite(db, { name, siteKey, allowedOrigins: origins, rateLimitPerMin: rateLimit });
+    const site = createSite(db, auth.user.id, {
+      name,
+      siteKey,
+      allowedOrigins: origins,
+      rateLimitPerMin: rateLimit,
+    });
     return NextResponse.json(
       { item: { ...site, embedSnippet: embedSnippet(site.siteKey, requestBaseUrl(request)) } },
       { status: 201 },
