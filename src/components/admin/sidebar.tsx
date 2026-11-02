@@ -14,6 +14,7 @@ import {
   Sparkles,
   Menu,
   X,
+  ChevronRight,
 } from 'lucide-react';
 import { useState } from 'react';
 import type { Locale } from '@/lib/i18n';
@@ -33,17 +34,22 @@ export interface SidebarLabels {
   demo: string;
   roleAdmin: string;
   roleUser: string;
+  workspace: string;
+  conversationsGroup: string;
+  catalogGroup: string;
+  marketingGroup: string;
+  settingsGroup: string;
 }
 
+type NavLabel = keyof Pick<SidebarLabels, 'dashboard' | 'knowledge' | 'products' | 'copywriting' | 'conversations' | 'reports' | 'quickReplies' | 'sites'>;
+type GroupLabel = keyof Pick<SidebarLabels, 'workspace' | 'conversationsGroup' | 'catalogGroup' | 'marketingGroup' | 'settingsGroup'>;
+
 const NAV = [
-  { href: '/admin', key: 'dashboard', icon: LayoutDashboard },
-  { href: '/admin/knowledge', key: 'knowledge', icon: BookOpen },
-  { href: '/admin/products', key: 'products', icon: Package },
-  { href: '/admin/copywriting', key: 'copywriting', icon: Sparkles },
-  { href: '/admin/conversations', key: 'conversations', icon: MessagesSquare },
-  { href: '/admin/quick-replies', key: 'quickReplies', icon: MessageSquareText },
-  { href: '/admin/reports', key: 'reports', icon: BarChart3 },
-  { href: '/admin/sites', key: 'sites', icon: Settings },
+  { group: 'workspace', items: [{ href: '/admin', key: 'dashboard', icon: LayoutDashboard }, { href: '/admin/reports', key: 'reports', icon: BarChart3 }] },
+  { group: 'conversationsGroup', items: [{ href: '/admin/conversations', key: 'conversations', icon: MessagesSquare }, { href: '/admin/quick-replies', key: 'quickReplies', icon: MessageSquareText }] },
+  { group: 'catalogGroup', items: [{ href: '/admin/knowledge', key: 'knowledge', icon: BookOpen }, { href: '/admin/products', key: 'products', icon: Package }] },
+  { group: 'marketingGroup', items: [{ href: '/admin/copywriting', key: 'copywriting', icon: Sparkles }] },
+  { group: 'settingsGroup', items: [{ href: '/admin/sites', key: 'sites', icon: Settings }] },
 ] as const;
 
 export function AdminSidebar({
@@ -74,13 +80,16 @@ export function AdminSidebar({
     }
   }
 
-  const nav = <nav className="flex-1 space-y-1 p-3" aria-label="Admin">
-        {NAV.map(({ href, key, icon: Icon }) => {
+  const nav = <nav className="flex-1 space-y-5 overflow-y-auto p-3" aria-label="Admin">
+        {NAV.map(({ group, items }) => <div key={group}>
+          <p className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{labels[group]}</p>
+          {items.map(({ href, key, icon: Icon }) => {
           const active = href === '/admin' ? pathname === '/admin' : pathname.startsWith(href);
           return <Link key={href} href={href} onClick={() => setMobileOpen(false)} aria-current={active ? 'page' : undefined}
-            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${active ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}>
-            <Icon className="h-4 w-4" aria-hidden />{labels[key]}</Link>;
-        })}
+            className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${active ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}>
+            <Icon className="h-4 w-4" aria-hidden />{labels[key]}{active && <ChevronRight className="ml-auto h-3.5 w-3.5" aria-hidden />}</Link>;
+          })}
+        </div>)}
       </nav>;
   const footer = <div className="space-y-3 border-t border-slate-100 p-4">
         <div><LocaleSwitcher locale={locale} /></div>

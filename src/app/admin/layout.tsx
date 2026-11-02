@@ -4,6 +4,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { SESSION_COOKIE } from '@/lib/auth/session';
 import { getRequestLocale, getRequestTranslator } from '@/lib/i18n/server';
 import { AdminSidebar } from '@/components/admin/sidebar';
+import { AdminTopbar } from '@/components/admin/topbar';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,13 +43,19 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     demo: t('admin.viewDemo'),
     roleAdmin: t('admin.roleAdmin'),
     roleUser: t('admin.roleUser'),
+    workspace: t('admin.group.workspace'),
+    conversationsGroup: t('admin.group.conversations'),
+    catalogGroup: t('admin.group.catalog'),
+    marketingGroup: t('admin.group.marketing'),
+    settingsGroup: t('admin.group.settings'),
   };
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="flex min-h-screen bg-slate-100/70">
       <AdminSidebar locale={locale} labels={labels} username={username} role={role} />
       <div className="min-w-0 flex-1">
-        <main className="mx-auto max-w-7xl px-4 pb-8 pt-20 sm:px-6 sm:py-8 md:pt-8 lg:px-8">{children}</main>
+        <AdminTopbar username={username} roleLabel={labels[role === 'admin' ? 'roleAdmin' : 'roleUser']} labels={labels} />
+        <main className="mx-auto max-w-[1440px] px-4 pb-8 pt-20 sm:px-6 sm:py-8 md:pt-8 lg:px-8">{children}</main>
       </div>
     </div>
   );

@@ -81,7 +81,7 @@ export default async function AdminDashboardPage() {
   ];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
           {t('admin.dashboardTitle')}
@@ -89,12 +89,12 @@ export default async function AdminDashboardPage() {
         <p className="mt-1 text-sm text-slate-500">{t('admin.dashboardSubtitle')}</p>
       </header>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">{t('admin.welcomeTitle')}</h2>
         <p className="mt-2 max-w-2xl text-sm text-slate-600">{t('admin.welcomeBody')}</p>
       </section>
 
-      <section>
+      <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
           {t('admin.quickLinks')}
         </h2>
@@ -103,7 +103,7 @@ export default async function AdminDashboardPage() {
             <Link
               key={href}
               href={href}
-              className="group rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-500/50 hover:shadow-lg hover:shadow-slate-200/60"
+              className="group rounded-xl border border-slate-200/80 bg-slate-50/50 p-5 transition hover:border-brand-500/50 hover:bg-white hover:shadow-md"
             >
               <Icon className="h-5 w-5 text-brand-600" aria-hidden />
               <h3 className="mt-3 font-medium text-slate-900">{title}</h3>
@@ -113,6 +113,7 @@ export default async function AdminDashboardPage() {
         </div>
       </section>
 
+      <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
       <StatsPanel
         labels={{
           title: t('stats.title'),
@@ -136,8 +137,9 @@ export default async function AdminDashboardPage() {
           intentLabels,
         }}
       />
+      </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">{t('admin.embedTitle')}</h2>
         <p className="mt-1 text-sm text-slate-500">{t('admin.embedHint')}</p>
         {siteKey ? (

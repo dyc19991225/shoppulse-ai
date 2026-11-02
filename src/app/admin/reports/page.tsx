@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { BarChart3, Download } from 'lucide-react';
+import { Activity, BarChart3, Bot, Download, MessagesSquare, Package, ShoppingBag, UserRound, Users, Zap, Headset, BookOpen, Copy } from 'lucide-react';
 import { getRequestTranslator } from '@/lib/i18n/server';
 import { getCurrentUser } from '@/lib/auth';
 import { SESSION_COOKIE } from '@/lib/auth/session';
@@ -95,9 +95,10 @@ function TrendChart({
   );
 }
 
-function KpiCard({ label, value }: { label: string; value: string }) {
+function KpiCard({ label, value, icon: Icon }: { label: string; value: string; icon: typeof Activity }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+      <span className="mb-3 grid h-9 w-9 place-items-center rounded-xl bg-brand-50 text-brand-600"><Icon className="h-4 w-4" aria-hidden /></span>
       <p className="text-xs font-medium text-slate-500">{label}</p>
       <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{value}</p>
     </div>
@@ -134,6 +135,21 @@ export default async function ReportsPage({ searchParams }: PageProps) {
     { days: 30 as const, label: t('reports.range30') },
     { days: 90 as const, label: t('reports.range90') },
   ];
+  const kpis = [
+    [t('reports.kpi.conversations'), String(summary.kpis.conversations), MessagesSquare],
+    [t('reports.kpi.messages'), String(summary.kpis.messages), Activity],
+    [t('reports.kpi.visitorMessages'), String(summary.kpis.visitorMessages), UserRound],
+    [t('reports.kpi.aiReplies'), String(summary.kpis.aiReplies), Bot],
+    [t('reports.kpi.agentReplies'), String(summary.kpis.agentReplies), Headset],
+    [t('reports.kpi.handoffs'), String(summary.kpis.handoffs), Zap],
+    [t('reports.kpi.handoffRate'), percent(summary.kpis.handoffRate), Activity],
+    [t('reports.kpi.handled'), String(summary.kpis.handled), Users],
+    [t('reports.kpi.pendingHandoffs'), String(summary.kpis.pendingHandoffs), Headset],
+    [t('reports.kpi.copiesGenerated'), String(summary.kpis.copiesGenerated), Copy],
+    [t('reports.kpi.kbEntries'), String(summary.kpis.kbEntries), BookOpen],
+    [t('reports.kpi.products'), String(summary.kpis.products), ShoppingBag],
+    [t('reports.kpi.avgAgentFirstResponseSec'), summary.kpis.avgAgentFirstResponseSec === null ? t('reports.kpi.noFirstResponse') : formatSeconds(summary.kpis.avgAgentFirstResponseSec), Activity],
+  ] as const;
 
   return (
     <div className="space-y-6">
@@ -151,124 +167,58 @@ export default async function ReportsPage({ searchParams }: PageProps) {
         }
       />
 
-      <div className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5">
-        {ranges.map((range) => (
-          <Link
-            key={range.days}
-            href={`/admin/reports?days=${range.days}`}
-            aria-current={days === range.days ? 'page' : undefined}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-              days === range.days ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            {range.label}
-          </Link>
-        ))}
-      </div>
-
       {!hasData ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center shadow-sm">
           <BarChart3 className="mx-auto h-8 w-8 text-slate-300" aria-hidden />
           <p className="mt-3 font-medium text-slate-700">{t('reports.empty')}</p>
           <p className="mt-1 text-sm text-slate-500">{t('reports.emptyHint')}</p>
         </div>
       ) : (
         <>
-          <section className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-5">
-              <p className="text-xs font-medium text-brand-700">{t('reports.todayConversations')}</p>
-              <p className="mt-1 text-3xl font-semibold tracking-tight text-slate-900">
-                {summary.today.conversations}
-              </p>
-              <p className="mt-1 text-xs text-slate-500">{t('reports.todayHint')}</p>
-            </div>
-            <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-5">
-              <p className="text-xs font-medium text-amber-700">{t('reports.pendingHandoffs')}</p>
-              <p className="mt-1 text-3xl font-semibold tracking-tight text-slate-900">
-                {summary.today.pendingHandoffs}
-              </p>
-              <p className="mt-1 text-xs text-slate-500">{t('reports.pendingHint')}</p>
-            </div>
-          </section>
-
-          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <KpiCard
-              label={t('reports.kpi.conversations')}
-              value={String(summary.kpis.conversations)}
-            />
-            <KpiCard label={t('reports.kpi.messages')} value={String(summary.kpis.messages)} />
-            <KpiCard
-              label={t('reports.kpi.visitorMessages')}
-              value={String(summary.kpis.visitorMessages)}
-            />
-            <KpiCard label={t('reports.kpi.aiReplies')} value={String(summary.kpis.aiReplies)} />
-            <KpiCard
-              label={t('reports.kpi.agentReplies')}
-              value={String(summary.kpis.agentReplies)}
-            />
-            <KpiCard label={t('reports.kpi.handoffs')} value={String(summary.kpis.handoffs)} />
-            <KpiCard
-              label={t('reports.kpi.handoffRate')}
-              value={percent(summary.kpis.handoffRate)}
-            />
-            <KpiCard label={t('reports.kpi.handled')} value={String(summary.kpis.handled)} />
-            <KpiCard
-              label={t('reports.kpi.pendingHandoffs')}
-              value={String(summary.kpis.pendingHandoffs)}
-            />
-            <KpiCard
-              label={t('reports.kpi.copiesGenerated')}
-              value={String(summary.kpis.copiesGenerated)}
-            />
-            <KpiCard label={t('reports.kpi.kbEntries')} value={String(summary.kpis.kbEntries)} />
-            <KpiCard label={t('reports.kpi.products')} value={String(summary.kpis.products)} />
-            <KpiCard
-              label={t('reports.kpi.avgAgentFirstResponseSec')}
-              value={
-                summary.kpis.avgAgentFirstResponseSec === null
-                  ? t('reports.kpi.noFirstResponse')
-                  : formatSeconds(summary.kpis.avgAgentFirstResponseSec)
-              }
-            />
-          </section>
-
-          <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-sm font-semibold text-slate-700">{t('reports.trendTitle')}</h2>
-            <div className="grid gap-4 lg:grid-cols-2">
-              <TrendChart rows={summary.daily} field="conversations" label={t('reports.trendConversations')} />
-              <TrendChart rows={summary.daily} field="messages" label={t('reports.trendMessages')} />
-              <TrendChart rows={summary.daily} field="handoffs" label={t('reports.trendHandoffs')} />
-              <TrendChart rows={summary.daily} field="copies" label={t('reports.trendCopies')} />
-            </div>
-            <details className="text-xs text-slate-500">
-              <summary className="cursor-pointer select-none hover:text-slate-700">
-                {t('reports.tableView')}
-              </summary>
-              <table className="mt-2 w-full text-left">
-                <thead>
-                  <tr className="border-b border-slate-100">
-                    <th className="py-1 font-medium">{t('reports.date')}</th>
-                    <th className="py-1 text-right font-medium">{t('reports.trendConversations')}</th>
-                    <th className="py-1 text-right font-medium">{t('reports.trendMessages')}</th>
-                    <th className="py-1 text-right font-medium">{t('reports.trendHandoffs')}</th>
-                    <th className="py-1 text-right font-medium">{t('reports.trendCopies')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summary.daily.map((row) => (
-                    <tr key={row.date} className="border-b border-slate-50 tabular-nums">
-                      <td className="py-1">{row.date}</td>
-                      <td className="py-1 text-right">{row.conversations}</td>
-                      <td className="py-1 text-right">{row.messages}</td>
-                      <td className="py-1 text-right">{row.handoffs}</td>
-                      <td className="py-1 text-right">{row.copies}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </details>
-          </section>
-
+      <section className="grid gap-4 sm:grid-cols-2">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
+          <p className="text-xs font-medium text-slate-500">{t('reports.todayConversations')}</p><p className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">{summary.today.conversations}</p><p className="mt-1 text-xs text-slate-500">{t('reports.todayHint')}</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
+          <p className="text-xs font-medium text-slate-500">{t('reports.pendingHandoffs')}</p><p className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">{summary.today.pendingHandoffs}</p><p className="mt-1 text-xs text-slate-500">{t('reports.pendingHint')}</p>
+        </div>
+      </section>
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {kpis.map(([label, value, Icon]) => <KpiCard key={label} label={label} value={value} icon={Icon} />)}
+      </section>
+      <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold text-slate-800">{t('reports.trendTitle')}</h2>
+          <div className="inline-flex rounded-lg bg-slate-100 p-1">
+        {ranges.map((range) => (
+          <Link
+            key={range.days}
+            href={`/admin/reports?days=${range.days}`}
+            aria-current={days === range.days ? 'page' : undefined}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+              days === range.days ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            {range.label}
+          </Link>
+        ))}
+          </div>
+        </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <TrendChart rows={summary.daily} field="conversations" label={t('reports.trendConversations')} />
+          <TrendChart rows={summary.daily} field="messages" label={t('reports.trendMessages')} />
+          <TrendChart rows={summary.daily} field="handoffs" label={t('reports.trendHandoffs')} />
+          <TrendChart rows={summary.daily} field="copies" label={t('reports.trendCopies')} />
+        </div>
+        <details className="mt-4 text-xs text-slate-500">
+          <summary className="cursor-pointer select-none hover:text-slate-700">{t('reports.tableView')}</summary>
+          <div className="overflow-x-auto">
+          <table className="mt-2 w-full text-left">
+            <thead><tr className="border-b border-slate-100"><th className="py-1 font-medium">{t('reports.date')}</th><th className="py-1 text-right font-medium">{t('reports.trendConversations')}</th><th className="py-1 text-right font-medium">{t('reports.trendMessages')}</th><th className="py-1 text-right font-medium">{t('reports.trendHandoffs')}</th><th className="py-1 text-right font-medium">{t('reports.trendCopies')}</th></tr></thead>
+            <tbody>{summary.daily.map((row) => <tr key={row.date} className="border-b border-slate-50 tabular-nums"><td className="py-1">{row.date}</td><td className="py-1 text-right">{row.conversations}</td><td className="py-1 text-right">{row.messages}</td><td className="py-1 text-right">{row.handoffs}</td><td className="py-1 text-right">{row.copies}</td></tr>)}</tbody>
+          </table></div>
+        </details>
+      </section>
           <div className="grid gap-6 lg:grid-cols-2">
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <h2 className="mb-3 text-sm font-semibold text-slate-700">{t('reports.intentsTitle')}</h2>

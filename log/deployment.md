@@ -47,3 +47,4 @@
 - 2026-11-02 13:03 (UTC+8) M4 修复（Claude Code）：#1 非缺陷（SQLite rename 后外键仍指向 products，已加测试）；#2 ensureDefaultSite 改为按 admin 查找；#3 开发态明文 ADMIN_PASSWORD 路径补 dummy scrypt，所有失败路径恰好一次 scrypt（spy 测试）；#4 会话详情消息计数按 owner。测试 426/426，tsc、build 通过。多用户 v0.2 完成，待批准部署。
 - 2026-11-02 13:41 (UTC+8) F1 报表汇总（/admin/reports + summary/summary.csv，按用户、补零、空状态）与 F2 快捷回复（迁移 v3：quick_replies + conversations.tags/note + sites.welcome_message）完成（Claude Code）。测试 444/444，build 通过。改版前截图存 screenshots/before-*.png。
 - 2026-11-02 15:08 (UTC+8) F3 会话工作台（人工回复 agent 消息、挂件 5 秒轮询 /api/widget/messages、标签/备注/按标签筛选、快捷回复选择器）+ F4 加入知识库 + F5 站点欢迎语 完成（Claude Code）。测试 481/481，build 通过。（14:26 起 cc-wb 默认模型改为 glm-5.3，本批仍为 deepseek-v4.1-flash。）
+- 2026-11-02 15:20 (UTC+8) R1a 后台改版（Codex gpt-6-luna low，一次）：分组侧栏（工作台/对话/知识与商品/营销/设置）、顶栏（页面标题+用户/角色）、报表页 KPI 图标卡与趋势卡头部区间切换、概览与登录页样式。会话页双栏未做。Codex 沙箱内 user-cli 测试因无法 spawn 报错，本机复跑 481/481 通过，build 通过。
