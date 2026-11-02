@@ -43,7 +43,10 @@
   var VISITOR_KEY = 'shoppulse_visitor_id';
   var CONV_KEY = 'shoppulse_conversation_id:' + SITE_KEY;
   var LOCALE_KEY = 'shoppulse_locale';
+  /** Set when this conversation is watched for merchant replies (F3). */
+  var WATCH_KEY = 'shoppulse_agent_watch:' + SITE_KEY;
   var MAX_LENGTH = 1000;
+  var POLL_INTERVAL_MS = 5000;
 
   var STRINGS = {
     zh: {
@@ -60,6 +63,7 @@
       poweredBy: '由 ShopPulse AI 提供支持',
       productCta: '查看商品',
       demoMode: '演示模式',
+      agent: '人工客服',
     },
     en: {
       launcher: 'Chat with us',
@@ -75,6 +79,7 @@
       poweredBy: 'Powered by ShopPulse AI',
       productCta: 'View product',
       demoMode: 'Demo mode',
+      agent: 'Support agent',
     },
   };
 
@@ -96,7 +101,19 @@
     sending: false,
     conversationId: readStorage(CONV_KEY),
     visitorId: ensureVisitorId(),
+    /** F5: first assistant bubble from /api/widget/config (never stored). */
+    welcomeMessage: '',
+    configLoaded: false,
+    configLoading: false,
+    /** F3: conversation watched for merchant replies (handoff happened). */
+    needsHuman: false,
+    watchConversationId: readStorage(WATCH_KEY) || '',
+    lastAgentAt: '',
+    polling: false,
+    pollingRequest: false,
+    renderedAgentIds: {},
   };
+  var pollTimer = null;
 
   function t(key, vars) {
     var table = STRINGS[state.locale] || STRINGS.zh;
@@ -195,6 +212,10 @@
     '.msg.user{align-self:flex-end;background:linear-gradient(135deg,#4f46e5,#6d28d9);color:#fff;border-bottom-right-radius:5px;box-shadow:0 4px 10px rgba(79,70,229,.14)}',
     '.msg.bot{align-self:flex-start;background:#fff;color:#0f172a;border:1px solid #e2e8f0;',
     'border-bottom-left-radius:5px;box-shadow:0 3px 10px rgba(15,23,42,.04)}',
+    '.msg.agent{align-self:flex-start;background:#ecfdf5;color:#064e3b;border:1px solid #a7f3d0;',
+    'border-bottom-left-radius:5px;box-shadow:0 3px 10px rgba(6,78,59,.06)}',
+    '.msg.agent .msg-label{display:block;margin-bottom:3px;font-size:10.5px;font-weight:600;',
+    'text-transform:uppercase;letter-spacing:.04em;color:#047857}',
     '.msg.notice{align-self:stretch;max-width:100%;background:#fffbeb;color:#92400e;border:1px solid #fde68a;border-radius:12px;',
     'font-size:12.5px;text-align:center}',
     '.msg.error{align-self:stretch;max-width:100%;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;',
@@ -352,8 +373,12 @@
     panel.hidden = !open;
     launcher.hidden = open;
     if (open) {
+      loadConfig();
+      startPolling();
       input.focus();
       scrollToBottom();
+    } else {
+      stopPolling();
     }
     launcher.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
@@ -386,7 +411,15 @@
   function addMessage(role, text) {
     var bubble = document.createElement('div');
     bubble.className = 'msg ' + role;
-    bubble.textContent = text;
+    if (role === 'agent') {
+      var label = document.createElement('span');
+      label.className = 'msg-label';
+      label.textContent = t('agent');
+      bubble.appendChild(label);
+      bubble.appendChild(document.createTextNode(text));
+    } else {
+      bubble.textContent = text;
+    }
     messagesEl.appendChild(bubble);
     scrollToBottom();
     return bubble;
@@ -493,6 +526,129 @@
     state.sending = sending;
     sendBtn.disabled = sending;
     input.disabled = false;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Welcome message (F5) and agent replies (F3)
+  // ---------------------------------------------------------------------------
+
+  /** Fetches the public config once, then renders the welcome bubble. */
+  function loadConfig() {
+    if (state.configLoaded || state.configLoading) return;
+    state.configLoading = true;
+    fetch(API_BASE + '/api/widget/config?site_key=' + encodeURIComponent(SITE_KEY), {
+      method: 'GET',
+      credentials: 'omit',
+    })
+      .then(function (response) {
+        if (!response.ok) return null;
+        return response.json();
+      })
+      .then(function (config) {
+        state.configLoaded = true;
+        if (
+          config &&
+          typeof config.welcomeMessage === 'string' &&
+          config.welcomeMessage.trim()
+        ) {
+          state.welcomeMessage = config.welcomeMessage;
+          // Always the first bubble, even if the visitor typed before the
+          // config request finished.
+          var bubble = addMessage('bot', state.welcomeMessage);
+          if (bubble !== messagesEl.firstChild) {
+            messagesEl.insertBefore(bubble, messagesEl.firstChild);
+          }
+        }
+      })
+      .catch(function () {
+        /* config is optional; the widget still works without it */
+      })
+      .then(function () {
+        state.configLoading = false;
+      });
+  }
+
+  /**
+   * Remembers that this conversation should be watched for merchant replies.
+   * Stored per conversation so a new chat does not inherit the old watch.
+   */
+  function markWatchAgent() {
+    if (!state.conversationId) return;
+    state.watchConversationId = state.conversationId;
+    writeStorage(WATCH_KEY, state.conversationId);
+    startPolling();
+  }
+
+  function shouldPoll() {
+    return Boolean(
+      state.open &&
+        state.conversationId &&
+        (state.needsHuman || state.watchConversationId === state.conversationId),
+    );
+  }
+
+  function startPolling() {
+    if (state.polling || !shouldPoll()) return;
+    state.polling = true;
+    // Poll once immediately so a reply that landed while the panel was closed
+    // appears without an extra 5 s wait, then keep polling while it is open.
+    pollAgentMessages();
+    pollTimer = window.setInterval(pollAgentMessages, POLL_INTERVAL_MS);
+  }
+
+  function stopPolling() {
+    if (pollTimer !== null) {
+      window.clearInterval(pollTimer);
+      pollTimer = null;
+    }
+    state.polling = false;
+  }
+
+  /** GET /api/widget/messages; only agent messages after the newest one seen. */
+  function pollAgentMessages() {
+    if (!state.conversationId || !state.visitorId || state.pollingRequest) return;
+    var params = new URLSearchParams();
+    params.set('site_key', SITE_KEY);
+    params.set('conversation_id', state.conversationId);
+    params.set('visitor_id', state.visitorId);
+    if (state.lastAgentAt) params.set('after', state.lastAgentAt);
+
+    state.pollingRequest = true;
+    fetch(API_BASE + '/api/widget/messages?' + params.toString(), {
+      method: 'GET',
+      credentials: 'omit',
+    })
+      .then(function (response) {
+        if (!response.ok) return null;
+        return response.json();
+      })
+      .then(function (body) {
+        if (!body || !body.items || !body.items.length) return;
+        body.items.forEach(function (message) {
+          if (
+            !message ||
+            typeof message.id !== 'string' ||
+            typeof message.content !== 'string' ||
+            state.renderedAgentIds[message.id]
+          ) {
+            return;
+          }
+          state.renderedAgentIds[message.id] = true;
+          addMessage('agent', message.content);
+          if (typeof message.createdAt === 'string' && message.createdAt > state.lastAgentAt) {
+            state.lastAgentAt = message.createdAt;
+          }
+          // Once a merchant replies, keep watching even if the handoff flag is
+          // cleared by handling the conversation.
+          markWatchAgent();
+        });
+      })
+      .catch(function () {
+        /* polling is best-effort; the next tick retries */
+      })
+      .then(function () {
+        state.pollingRequest = false;
+      });
   }
 
   // ---------------------------------------------------------------------------
@@ -616,6 +772,10 @@
         }
         if (data && data.mock) badge.hidden = false;
         if (data && (data.locale === 'zh' || data.locale === 'en')) state.locale = data.locale;
+        if (data && typeof data.needsHuman === 'boolean') {
+          state.needsHuman = data.needsHuman;
+          if (data.needsHuman) markWatchAgent();
+        }
         return;
       }
       if (name === 'products') {
@@ -626,6 +786,8 @@
       if (name === 'handoff') {
         dropTyping();
         addMessage('notice', t('handoff'));
+        state.needsHuman = true;
+        markWatchAgent();
         return;
       }
       if (name === 'delta') {
@@ -700,6 +862,7 @@
       setOpen(false);
     },
     destroy: function () {
+      stopPolling();
       if (currentController) currentController.abort();
       if (host.parentNode) host.parentNode.removeChild(host);
       delete window.ShopPulseWidget;
@@ -707,6 +870,15 @@
     },
     getConversationId: function () {
       return state.conversationId;
+    },
+    isPolling: function () {
+      return state.polling;
+    },
+    clearAgentWatch: function () {
+      state.watchConversationId = '';
+      state.needsHuman = false;
+      writeStorage(WATCH_KEY, null);
+      stopPolling();
     },
   };
 

@@ -10,6 +10,7 @@ import {
   MAX_SITES,
   parseOrigins,
   requestBaseUrl,
+  WELCOME_MESSAGE_MAX,
 } from '@/lib/sites';
 import { requireAdminApi } from '@/lib/auth';
 
@@ -53,6 +54,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         : '';
   if (!isValidSiteKey(siteKey)) return jsonError(400, 'invalid_site_key');
 
+  if (
+    body.welcomeMessage !== undefined &&
+    (typeof body.welcomeMessage !== 'string' ||
+      body.welcomeMessage.trim().length > WELCOME_MESSAGE_MAX)
+  ) {
+    return jsonError(400, 'invalid_welcome_message');
+  }
+  const welcomeMessage = typeof body.welcomeMessage === 'string' ? body.welcomeMessage.trim() : '';
+
   const db = getDb();
   if (listSites(db, auth.user.id).length >= MAX_SITES) return jsonError(409, 'too_many_sites');
 
@@ -67,6 +77,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       siteKey,
       allowedOrigins: origins,
       rateLimitPerMin: rateLimit,
+      welcomeMessage,
     });
     return NextResponse.json(
       { item: { ...site, embedSnippet: embedSnippet(site.siteKey, requestBaseUrl(request)) } },

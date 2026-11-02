@@ -59,12 +59,27 @@ const EMPTY_DRAFT: Draft = {
   enabled: true,
 };
 
-export function KnowledgeManager({ labels }: { labels: KnowledgeLabels }) {
+export function KnowledgeManager({
+  labels,
+  prefilledDraft,
+}: {
+  labels: KnowledgeLabels;
+  /** F4: values from a conversation message; opens the create form on load. */
+  prefilledDraft?: { title: string; content: string };
+}) {
   const [entries, setEntries] = useState<KbEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [draft, setDraft] = useState<Draft | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(() =>
+    prefilledDraft
+      ? {
+          ...EMPTY_DRAFT,
+          title: prefilledDraft.title,
+          content: prefilledDraft.content,
+        }
+      : null,
+  );
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -90,6 +105,17 @@ export function KnowledgeManager({ labels }: { labels: KnowledgeLabels }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // The prefill only seeds the form once; drop it from the URL so a refresh
+  // does not reopen the modal.
+  useEffect(() => {
+    if (!prefilledDraft) return;
+    if (window.location.search) {
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+    setFormError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function submitSearch(event: FormEvent) {
     event.preventDefault();

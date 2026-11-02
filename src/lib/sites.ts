@@ -11,6 +11,8 @@ export const MAX_SITES = 20;
 export const MAX_ORIGINS = 20;
 export const MIN_RATE_LIMIT = 1;
 export const MAX_RATE_LIMIT = 600;
+/** F5: welcome message length, matching specs/merchant-features.md. */
+export const WELCOME_MESSAGE_MAX = 500;
 
 /** URL-safe public key; 14 hex chars keeps the embed snippet short. */
 export function generateSiteKey(): string {

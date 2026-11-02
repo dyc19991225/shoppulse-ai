@@ -24,6 +24,8 @@ export default function SitesPage() {
           originsHint: t('sites.originsHint'),
           rateLimit: t('sites.rateLimit'),
           rateLimitHint: t('sites.rateLimitHint'),
+          welcomeMessage: t('sites.welcomeMessage'),
+          welcomeMessageHint: t('sites.welcomeMessageHint'),
           embed: t('sites.embed'),
           embedHint: t('sites.embedHint'),
           copy: t('sites.copy'),

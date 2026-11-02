@@ -5,13 +5,31 @@ import { KnowledgeManager } from '@/components/admin/knowledge-manager';
 
 export const dynamic = 'force-dynamic';
 
-export default function KnowledgePage() {
+interface PageProps {
+  searchParams?: { title?: string; content?: string };
+}
+
+export default function KnowledgePage({ searchParams }: PageProps) {
   const t = getRequestTranslator();
+
+  // F4: "add to knowledge base" from a conversation links here with the
+  // visitor question and the following reply already filled in.
+  const title = typeof searchParams?.title === 'string' ? searchParams.title.slice(0, 200) : '';
+  const content =
+    typeof searchParams?.content === 'string' ? searchParams.content.slice(0, 20000) : '';
+  const prefill =
+    title || content
+      ? {
+          title,
+          content,
+        }
+      : undefined;
 
   return (
     <div className="space-y-6">
       <PageHeader title={t('kb.title')} subtitle={t('kb.subtitle')} />
       <KnowledgeManager
+        prefilledDraft={prefill}
         labels={{
           newEntry: t('kb.new'),
           editEntry: t('kb.edit'),

@@ -9,6 +9,7 @@ import {
   isValidSiteKey,
   parseOrigins,
   requestBaseUrl,
+  WELCOME_MESSAGE_MAX,
 } from '@/lib/sites';
 import { requireAdminApi } from '@/lib/auth';
 
@@ -67,6 +68,17 @@ export async function PUT(request: NextRequest, { params }: Params): Promise<Nex
   if (body.rateLimitPerMin !== undefined) {
     if (!isAllowedRateLimit(body.rateLimitPerMin)) return jsonError(400, 'invalid_rate_limit');
     updates.rateLimitPerMin = body.rateLimitPerMin;
+  }
+
+  if (body.welcomeMessage !== undefined) {
+    if (typeof body.welcomeMessage !== 'string') {
+      return jsonError(400, 'invalid_welcome_message');
+    }
+    const welcomeMessage = body.welcomeMessage.trim();
+    if (welcomeMessage.length > WELCOME_MESSAGE_MAX) {
+      return jsonError(400, 'invalid_welcome_message');
+    }
+    updates.welcomeMessage = welcomeMessage;
   }
 
   if (Object.keys(updates).length === 0) return jsonError(400, 'no_updates');

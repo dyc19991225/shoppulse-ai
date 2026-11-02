@@ -3,6 +3,7 @@ import { listConversations, type ConversationListOptions } from '@/lib/db';
 import { getDb } from '@/lib/db-runtime';
 import { jsonError, parseId } from '@/lib/api';
 import { requireAdminApi } from '@/lib/auth';
+import { normalizeTag } from '@/lib/inbox';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +20,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const siteId = parseId(siteParam);
     if (!siteId) return jsonError(400, 'invalid_site_id');
     options.siteId = siteId;
+  }
+
+  const tagParam = params.get('tag');
+  if (tagParam !== null) {
+    const tag = normalizeTag(tagParam);
+    if (tag === null) return jsonError(400, 'invalid_tag');
+    options.tag = tag;
   }
 
   for (const key of ['needsHuman', 'handled'] as const) {

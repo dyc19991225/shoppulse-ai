@@ -388,6 +388,8 @@ export interface Site {
   siteKey: string;
   allowedOrigins: string[];
   rateLimitPerMin: number;
+  /** F5: first assistant bubble shown by the widget; never stored as a message. */
+  welcomeMessage: string;
   createdAt: string;
 }
 
@@ -396,6 +398,7 @@ export interface SiteInput {
   siteKey: string;
   allowedOrigins: string[];
   rateLimitPerMin: number;
+  welcomeMessage?: string;
 }
 
 /** `agent` is a human merchant reply (F3); reports already count it. */
@@ -410,6 +413,17 @@ export interface Conversation {
   needsHuman: boolean;
   handled: boolean;
   topIntent: string;
+  /** F3: at most 10 trimmed, unique tags of 1–20 characters. */
+  tags: string[];
+  /** F3: internal note, ≤2000 characters. */
+  note: string;
+}
+
+/** Columns a merchant can change from the inbox (PATCH). */
+export interface ConversationUpdate {
+  tags?: string[];
+  note?: string;
+  handled?: boolean;
 }
 
 export interface ConversationSummary extends Conversation {
@@ -489,11 +503,13 @@ function mapSite(row: Row): Site {
     siteKey: String(row.site_key),
     allowedOrigins: parseJson<string[]>(String(row.allowed_origins), []),
     rateLimitPerMin: Number(row.rate_limit_per_min),
+    welcomeMessage: String(row.welcome_message ?? ''),
     createdAt: String(row.created_at),
   };
 }
 
 function mapConversation(row: Row): Conversation {
+  const tags = parseJson<unknown>(String(row.tags ?? '[]'), []);
   return {
     id: String(row.id),
     siteId: Number(row.site_id),
@@ -503,6 +519,8 @@ function mapConversation(row: Row): Conversation {
     needsHuman: bool(row.needs_human),
     handled: bool(row.handled),
     topIntent: String(row.top_intent),
+    tags: Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === 'string') : [],
+    note: String(row.note ?? ''),
   };
 }
 
@@ -759,8 +777,9 @@ export function listAllAllowedOrigins(db: DB): string[] {
 export function createSite(db: DB, ownerId: number, input: SiteInput): Site {
   const info = db
     .prepare(
-      `INSERT INTO sites (owner_id, name, site_key, allowed_origins, rate_limit_per_min, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO sites
+       (owner_id, name, site_key, allowed_origins, rate_limit_per_min, welcome_message, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       ownerId,
@@ -768,6 +787,7 @@ export function createSite(db: DB, ownerId: number, input: SiteInput): Site {
       input.siteKey,
       JSON.stringify(input.allowedOrigins),
       input.rateLimitPerMin,
+      input.welcomeMessage ?? '',
       nowIso(),
     );
   return getSiteById(db, ownerId, Number(info.lastInsertRowid))!;
@@ -783,13 +803,15 @@ export function updateSite(
   if (!existing) return null;
   const merged = { ...existing, ...input };
   db.prepare(
-    `UPDATE sites SET name = ?, site_key = ?, allowed_origins = ?, rate_limit_per_min = ?
+    `UPDATE sites SET name = ?, site_key = ?, allowed_origins = ?, rate_limit_per_min = ?,
+       welcome_message = ?
      WHERE id = ? AND owner_id = ?`,
   ).run(
     merged.name,
     merged.siteKey,
     JSON.stringify(merged.allowedOrigins),
     merged.rateLimitPerMin,
+    merged.welcomeMessage ?? '',
     id,
     ownerId,
   );
@@ -876,10 +898,48 @@ export function setConversationHandled(
   );
 }
 
+/**
+ * Applies the fields a merchant can edit from the inbox. Returns null when the
+ * conversation does not exist for this owner (callers answer 404). An empty
+ * update object is a no-op returning the current row.
+ */
+export function updateConversation(
+  db: DB,
+  ownerId: number,
+  id: string,
+  updates: ConversationUpdate,
+): Conversation | null {
+  if (!getConversation(db, ownerId, id)) return null;
+
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  if (updates.tags !== undefined) {
+    sets.push('tags = ?');
+    params.push(JSON.stringify(updates.tags));
+  }
+  if (updates.note !== undefined) {
+    sets.push('note = ?');
+    params.push(updates.note);
+  }
+  if (updates.handled !== undefined) {
+    sets.push('handled = ?');
+    params.push(updates.handled ? 1 : 0);
+  }
+  if (sets.length > 0) {
+    params.push(id, ownerId);
+    db.prepare(`UPDATE conversations SET ${sets.join(', ')} WHERE id = ? AND ${OWNED_SITE}`).run(
+      ...params,
+    );
+  }
+  return getConversation(db, ownerId, id);
+}
+
 export interface ConversationListOptions {
   siteId?: number;
   needsHuman?: boolean;
   handled?: boolean;
+  /** F3: exact tag match inside the JSON tags array. */
+  tag?: string;
   limit?: number;
   offset?: number;
 }
@@ -902,6 +962,10 @@ export function listConversations(
   if (options.handled !== undefined) {
     where.push('c.handled = ?');
     params.push(options.handled ? 1 : 0);
+  }
+  if (options.tag) {
+    where.push('EXISTS (SELECT 1 FROM json_each(c.tags) WHERE json_each.value = ?)');
+    params.push(options.tag);
   }
   const whereSql = `WHERE ${where.join(' AND ')}`;
   const fromSql = 'FROM conversations c JOIN sites s ON s.id = c.site_id';
@@ -1001,6 +1065,51 @@ export function listMessages(db: DB, ownerId: number, conversationId: string): M
       )
       .all(conversationId, ownerId) as Row[]
   ).map(mapMessage);
+}
+
+/**
+ * Public widget polling (F3): agent messages of one conversation, but only when
+ * that conversation belongs to `siteId` and `visitorId` matches the visitor the
+ * conversation was created for. Returns null for every mismatch so the route
+ * can answer one uniform 404 and never reveal whether an id exists elsewhere.
+ */
+export function listAgentMessagesForVisitor(
+  db: DB,
+  siteId: number,
+  conversationId: string,
+  visitorId: string,
+  after?: string,
+): Message[] | null {
+  if (!conversationId || !visitorId) return null;
+  const conversation = db
+    .prepare('SELECT id, site_id, visitor_id FROM conversations WHERE id = ?')
+    .get(conversationId) as
+    | { id: string; site_id: number; visitor_id: string }
+    | undefined;
+  if (
+    !conversation ||
+    Number(conversation.site_id) !== siteId ||
+    conversation.visitor_id !== visitorId
+  ) {
+    return null;
+  }
+
+  const rows = after
+    ? db
+        .prepare(
+          `SELECT * FROM messages
+           WHERE conversation_id = ? AND role = 'agent' AND created_at > ?
+           ORDER BY created_at ASC, rowid ASC`,
+        )
+        .all(conversationId, after)
+    : db
+        .prepare(
+          `SELECT * FROM messages
+           WHERE conversation_id = ? AND role = 'agent'
+           ORDER BY created_at ASC, rowid ASC`,
+        )
+        .all(conversationId);
+  return (rows as Row[]).map(mapMessage);
 }
 
 export function deleteConversation(db: DB, ownerId: number, id: string): boolean {

@@ -11,6 +11,8 @@ export interface WidgetConfigPayload {
   /** UI languages the widget may display. */
   locales: ['zh', 'en'];
   rateLimitPerMin: number;
+  /** F5: shown as the first assistant bubble; not stored as a message. */
+  welcomeMessage: string;
 }
 
 /**
@@ -37,6 +39,7 @@ export function GET(request: NextRequest): NextResponse {
     siteName: site.name,
     locales: ['zh', 'en'],
     rateLimitPerMin: site.rateLimitPerMin,
+    welcomeMessage: site.welcomeMessage,
   };
 
   const headers = new Headers();

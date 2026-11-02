@@ -35,7 +35,13 @@ import type { Locale } from './i18n';
 export type ChatEvent =
   | {
       event: 'meta';
-      data: { conversationId: string; mock: boolean; locale: Locale };
+      data: {
+        conversationId: string;
+        mock: boolean;
+        locale: Locale;
+        /** True when this conversation needs a human (handoff already asked). */
+        needsHuman: boolean;
+      };
     }
   | { event: 'products'; data: { items: WidgetProduct[] } }
   | { event: 'handoff'; data: { needed: true; reason: 'explicit' | 'complaint' } }
@@ -149,10 +155,15 @@ function toWidgetProduct(product: Product): WidgetProduct {
 
 function conversationHistory(messages: Message[]): { role: 'user' | 'assistant'; content: string }[] {
   return messages
-    .filter((message) => message.role === 'user' || message.role === 'assistant')
+    .filter(
+      (message) =>
+        message.role === 'user' || message.role === 'assistant' || message.role === 'agent',
+    )
     .slice(-HISTORY_MESSAGES)
+    // From the next visitor turn's perspective a merchant reply is just
+    // another assistant turn (F3 spec).
     .map((message) => ({
-      role: message.role as 'user' | 'assistant',
+      role: message.role === 'user' ? 'user' : 'assistant',
       content: message.content,
     }));
 }
@@ -170,14 +181,18 @@ function resolveConversation(
   conversationId: string | null | undefined,
   visitorId: string | null | undefined,
   newId: () => string,
-): { conversationId: string; history: Message[] } {
+): { conversationId: string; history: Message[]; needsHuman: boolean } {
   if (conversationId) {
     const existing = getConversation(db, site.ownerId, conversationId);
     const owned =
       Boolean(existing && existing.visitorId && visitorId) &&
       existing!.visitorId === visitorId;
     if (existing && existing.siteId === site.id && owned) {
-      return { conversationId: existing.id, history: listMessages(db, site.ownerId, existing.id) };
+      return {
+        conversationId: existing.id,
+        history: listMessages(db, site.ownerId, existing.id),
+        needsHuman: existing.needsHuman,
+      };
     }
   }
 
@@ -187,7 +202,7 @@ function resolveConversation(
     siteId: site.id,
     visitorId: visitorId ?? '',
   });
-  return { conversationId: id, history: [] };
+  return { conversationId: id, history: [], needsHuman: false };
 }
 
 /**
@@ -200,7 +215,7 @@ export async function* runChat(input: ChatInput): AsyncGenerator<ChatEvent, void
   const message = validateMessage(input.message);
   const mock = provider.kind === 'mock';
 
-  const { conversationId, history } = resolveConversation(
+  const { conversationId, history, needsHuman } = resolveConversation(
     db,
     site,
     input.conversationId,
@@ -211,7 +226,12 @@ export async function* runChat(input: ChatInput): AsyncGenerator<ChatEvent, void
   const intentResult = classifyIntent(message);
   const handoff = detectHandoff(message);
 
-  yield { event: 'meta', data: { conversationId, mock, locale } };
+  // `needsHuman` tells the widget whether it should poll for merchant replies;
+  // include a handoff triggered by this very message.
+  yield {
+    event: 'meta',
+    data: { conversationId, mock, locale, needsHuman: needsHuman || handoff.needed },
+  };
 
   // Persist the user turn immediately so analytics see it even if the model
   // fails mid-stream.

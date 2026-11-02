@@ -14,13 +14,24 @@ const WIDGET_SOURCE = fs.readFileSync(
   'utf8',
 );
 
+interface IntervalRecord {
+  id: number;
+  fn: () => void;
+  delay: number;
+  cleared: boolean;
+}
+
 interface Harness {
   dom: JSDOM;
   window: any;
   fetchCalls: { url: string; init: RequestInit }[];
   respond: (body: ReadableStream<Uint8Array> | string, init?: ResponseInit) => void;
+  route: (match: (url: string) => boolean, handler: (url: string) => Response) => void;
   send: (text: string) => Promise<void>;
+  flush: () => Promise<void>;
   shadow: ShadowRoot;
+  intervals: IntervalRecord[];
+  open: () => Promise<void>;
 }
 
 const openDom = () => {
@@ -42,25 +53,36 @@ afterEach(() => {
   }
 });
 
-function setup(options: { locale?: string; noLocaleAttr?: boolean } = {}): Harness {
+function setup(
+  options: {
+    locale?: string;
+    noLocaleAttr?: boolean;
+    storage?: Record<string, string>;
+  } = {},
+): Harness {
   const locale = options.locale ?? 'zh';
   const dom = openDom();
   active = dom;
   const window = dom.window;
   const { document } = window;
 
+  for (const [key, value] of Object.entries(options.storage ?? {})) {
+    window.localStorage.setItem(key, value);
+  }
+
   // jsdom lacks fetch; wire the Node implementations into the window.
   const fetchCalls: { url: string; init: RequestInit }[] = [];
+  const routes: { match: (url: string) => boolean; handler: (url: string) => Response }[] = [];
   let respond: Harness['respond'] = () => {};
   window.fetch = (url: string, init: RequestInit) => {
     fetchCalls.push({ url, init });
+    const route = routes.find((entry) => entry.match(url));
+    if (route) {
+      return Promise.resolve(route.handler(url));
+    }
     return new Promise((resolve) => {
       respond = (body, responseInit) => {
-        const responseBody =
-          typeof body === 'string'
-            ? body
-            : body;
-        resolve(new Response(responseBody as BodyInit, { status: 200, ...responseInit }));
+        resolve(new Response(body as BodyInit, { status: 200, ...responseInit }));
       };
     });
   };
@@ -68,6 +90,30 @@ function setup(options: { locale?: string; noLocaleAttr?: boolean } = {}): Harne
   window.ReadableStream = ReadableStream;
   window.TextDecoder = TextDecoder;
   window.AbortController = AbortController;
+
+  // Track 5-second polling so tests can tick it without waiting.
+  const intervals: IntervalRecord[] = [];
+  const originalSetInterval = window.setInterval.bind(window);
+  const originalClearInterval = window.clearInterval.bind(window);
+  let nextIntervalId = 1;
+  window.setInterval = (fn: () => void, delay: number) => {
+    const record: IntervalRecord = {
+      id: nextIntervalId++,
+      fn: () => {
+        if (!record.cleared) fn();
+      },
+      delay,
+      cleared: false,
+    };
+    intervals.push(record);
+    originalSetInterval(record.fn, delay);
+    return record.id;
+  };
+  window.clearInterval = (id: number) => {
+    const record = intervals.find((entry) => entry.id === id);
+    if (record) record.cleared = true;
+    originalClearInterval(id);
+  };
 
   const script = document.createElement('script');
   script.setAttribute('data-site-key', 'test-site-key');
@@ -79,14 +125,23 @@ function setup(options: { locale?: string; noLocaleAttr?: boolean } = {}): Harne
   if (!host) throw new Error('widget host not created');
   const shadow = host.shadowRoot!;
 
+  async function flush(): Promise<void> {
+    for (let index = 0; index < 5; index += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+
   async function send(text: string): Promise<void> {
     const textarea = shadow.querySelector('.composer textarea') as HTMLTextAreaElement;
     const form = shadow.querySelector('.composer') as HTMLFormElement;
     textarea.value = text;
     form.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
-    // Let the fetch promise chain settle.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
+  }
+
+  async function open(): Promise<void> {
+    window.ShopPulseWidget.open();
+    await flush();
   }
 
   return {
@@ -94,8 +149,14 @@ function setup(options: { locale?: string; noLocaleAttr?: boolean } = {}): Harne
     window,
     fetchCalls,
     respond: (body, responseInit) => respond(body, responseInit),
+    route: (match, handler) => {
+      routes.push({ match, handler });
+    },
     send,
+    flush,
     shadow,
+    intervals,
+    open,
   };
 }
 
@@ -293,5 +354,182 @@ describe('widget.js', () => {
     harness.respond(stream);
     await sendPromise;
     expect(botText(harness.shadow)).toBe('ok');
+  });
+
+  it('renders the site welcome message as the first assistant bubble', async () => {
+    const harness = setup();
+    harness.route(
+      (url) => url.includes('/api/widget/config'),
+      () =>
+        new Response(JSON.stringify({ welcomeMessage: '您好，欢迎咨询！' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+
+    await harness.open();
+    const configCall = harness.fetchCalls.find((call) =>
+      call.url.includes('/api/widget/config'),
+    );
+    expect(configCall?.url).toContain('site_key=test-site-key');
+
+    const bubbles = [...harness.shadow.querySelectorAll('.messages > .msg')];
+    expect(bubbles[0].className).toBe('msg bot');
+    expect(bubbles[0].textContent).toBe('您好，欢迎咨询！');
+    // The welcome line is UI only; it never gets stored or sent.
+    expect(harness.fetchCalls.filter((call) => call.url.includes('/api/widget/chat'))).toHaveLength(
+      0,
+    );
+    expect(harness.window.localStorage.getItem('shoppulse_conversation_id:test-site-key')).toBeNull();
+  });
+
+  it('does not render a welcome bubble when the site has none', async () => {
+    const harness = setup();
+    harness.route(
+      (url) => url.includes('/api/widget/config'),
+      () =>
+        new Response(JSON.stringify({ welcomeMessage: '' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    await harness.open();
+    expect(harness.shadow.querySelectorAll('.messages > .msg')).toHaveLength(0);
+  });
+
+  it('polls for agent replies every 5 s while open, then stops on close', async () => {
+    let replies: { id: string; content: string; createdAt: string }[] = [];
+    const harness = setup({
+      storage: {
+        'shoppulse_conversation_id:test-site-key': 'conv-1',
+        'shoppulse_agent_watch:test-site-key': 'conv-1',
+      },
+    });
+    harness.route(
+      (url) => url.includes('/api/widget/config'),
+      () =>
+        new Response(JSON.stringify({ welcomeMessage: '' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    harness.route(
+      (url) => url.includes('/api/widget/messages'),
+      () =>
+        new Response(JSON.stringify({ items: replies }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+
+    await harness.open();
+    const messageCalls = () =>
+      harness.fetchCalls.filter((call) => call.url.includes('/api/widget/messages'));
+    expect(messageCalls()).toHaveLength(1);
+    const firstUrl = new URL(messageCalls()[0].url);
+    expect(firstUrl.searchParams.get('site_key')).toBe('test-site-key');
+    expect(firstUrl.searchParams.get('conversation_id')).toBe('conv-1');
+    expect(firstUrl.searchParams.get('visitor_id')).toBeTruthy();
+    expect(firstUrl.searchParams.get('after')).toBeNull();
+
+    const pollInterval = harness.intervals.find((interval) => interval.delay === 5000);
+    expect(pollInterval).toBeDefined();
+    expect(harness.window.ShopPulseWidget.isPolling()).toBe(true);
+
+    // A reply shows up on the next tick, with an `after` cursor.
+    replies = [
+      {
+        id: 'agent-1',
+        content: '人工客服：已收到您的留言。',
+        createdAt: '2024-01-01T00:00:05.000Z',
+      },
+    ];
+    pollInterval!.fn();
+    await harness.flush();
+
+    expect(messageCalls()).toHaveLength(2);
+    expect(new URL(messageCalls()[1].url).searchParams.get('after')).toBeNull();
+    const agentBubble = harness.shadow.querySelector('.msg.agent') as HTMLElement;
+    expect(agentBubble).not.toBeNull();
+    expect(agentBubble.textContent).toContain('人工客服：已收到您的留言。');
+
+    // The same reply is not duplicated, and subsequent polls use its timestamp.
+    pollInterval!.fn();
+    await harness.flush();
+    expect(harness.shadow.querySelectorAll('.msg.agent')).toHaveLength(1);
+    expect(new URL(messageCalls()[2].url).searchParams.get('after')).toBe(
+      '2024-01-01T00:00:05.000Z',
+    );
+
+    harness.window.ShopPulseWidget.close();
+    expect(harness.window.ShopPulseWidget.isPolling()).toBe(false);
+    const callsAfterClose = messageCalls().length;
+    pollInterval!.fn();
+    await harness.flush();
+    expect(messageCalls()).toHaveLength(callsAfterClose);
+  });
+
+  it('does not poll without a conversation watch', async () => {
+    const harness = setup({
+      storage: { 'shoppulse_conversation_id:test-site-key': 'conv-1' },
+    });
+    harness.route(
+      (url) => url.includes('/api/widget/config'),
+      () =>
+        new Response(JSON.stringify({ welcomeMessage: '' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    harness.route(
+      (url) => url.includes('/api/widget/messages'),
+      () => new Response(JSON.stringify({ items: [] }), { status: 200 }),
+    );
+
+    await harness.open();
+    expect(harness.fetchCalls.some((call) => call.url.includes('/api/widget/messages'))).toBe(
+      false,
+    );
+    expect(harness.window.ShopPulseWidget.isPolling()).toBe(false);
+  });
+
+  it('starts watching for agent replies after a handoff', async () => {
+    const harness = setup();
+    harness.route(
+      (url) => url.includes('/api/widget/config'),
+      () =>
+        new Response(JSON.stringify({ welcomeMessage: '' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    let messagesCalls = 0;
+    harness.route(
+      (url) => url.includes('/api/widget/messages'),
+      () => {
+        messagesCalls += 1;
+        return new Response(JSON.stringify({ items: [] }), { status: 200 });
+      },
+    );
+
+    await harness.open();
+    expect(messagesCalls).toBe(0);
+
+    const sendPromise = harness.send('我要转人工');
+    harness.respond(
+      sseStream([
+        { event: 'meta', data: { conversationId: 'conv-2', mock: true, locale: 'zh', needsHuman: true } },
+        { event: 'handoff', data: { needed: true, reason: 'explicit' } },
+        { event: 'delta', data: { text: '已记录。' } },
+        { event: 'done', data: { conversationId: 'conv-2' } },
+      ]),
+    );
+    await sendPromise;
+    await harness.flush();
+
+    expect(harness.window.ShopPulseWidget.isPolling()).toBe(true);
+    expect(messagesCalls).toBeGreaterThanOrEqual(1);
+    const call = harness.fetchCalls.find((entry) => entry.url.includes('/api/widget/messages'));
+    expect(new URL(call!.url).searchParams.get('conversation_id')).toBe('conv-2');
   });
 });

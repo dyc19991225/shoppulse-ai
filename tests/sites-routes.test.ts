@@ -200,6 +200,25 @@ describe('GET/POST /api/admin/sites', () => {
     expect(getSiteByKey(db(), body.item.siteKey)).not.toBeNull();
   });
 
+  it('stores a trimmed welcome message (≤500) on create', async () => {
+    const response = await createSiteRoute(
+      jsonRequest('/api/admin/sites', 'POST', {
+        name: '欢迎语站点',
+        welcomeMessage: '  您好，欢迎光临！  ',
+      }),
+    );
+    expect(response.status).toBe(201);
+    expect((await response.json()).item.welcomeMessage).toBe('您好，欢迎光临！');
+
+    const boundary = await createSiteRoute(
+      jsonRequest('/api/admin/sites', 'POST', {
+        name: '边界站点',
+        welcomeMessage: 'w'.repeat(500),
+      }),
+    );
+    expect(boundary.status).toBe(201);
+  });
+
   it('accepts a custom key and rejects duplicates', async () => {
     const custom = await createSiteRoute(
       jsonRequest('/api/admin/sites', 'POST', { name: 'A', siteKey: 'my-site-key-1' }),
@@ -222,6 +241,8 @@ describe('GET/POST /api/admin/sites', () => {
       [{ name: 'x', rateLimitPerMin: 601 }, 'invalid_rate_limit'],
       [{ name: 'x', rateLimitPerMin: 1.5 }, 'invalid_rate_limit'],
       [{ name: 'x', siteKey: 'bad key!' }, 'invalid_site_key'],
+      [{ name: 'x', welcomeMessage: 'w'.repeat(501) }, 'invalid_welcome_message'],
+      [{ name: 'x', welcomeMessage: 42 }, 'invalid_welcome_message'],
     ];
     for (const [body, error] of cases) {
       const response = await createSiteRoute(jsonRequest('/api/admin/sites', 'POST', body));
@@ -289,6 +310,25 @@ describe('/api/admin/sites/[id]', () => {
     expect(body.item.embedSnippet).toContain('new-key-123');
   });
 
+  it('updates and clears the welcome message', async () => {
+    const site = getSiteByKey(db(), DEFAULT_SITE_KEY)!;
+    const set = await updateSiteRoute(
+      jsonRequest(`/api/admin/sites/${site.id}`, 'PUT', {
+        welcomeMessage: '  有什么可以帮您？ ',
+      }),
+      params(site.id),
+    );
+    expect(set.status).toBe(200);
+    expect((await set.json()).item.welcomeMessage).toBe('有什么可以帮您？');
+
+    const cleared = await updateSiteRoute(
+      jsonRequest(`/api/admin/sites/${site.id}`, 'PUT', { welcomeMessage: '' }),
+      params(site.id),
+    );
+    expect(cleared.status).toBe(200);
+    expect((await cleared.json()).item.welcomeMessage).toBe('');
+  });
+
   it('validates updates', async () => {
     const site = getSiteByKey(db(), DEFAULT_SITE_KEY)!;
 
@@ -298,6 +338,21 @@ describe('/api/admin/sites/[id]', () => {
     );
     expect(empty.status).toBe(400);
     expect((await empty.json()).error).toBe('no_updates');
+
+    const badWelcome = await updateSiteRoute(
+      jsonRequest(`/api/admin/sites/${site.id}`, 'PUT', {
+        welcomeMessage: 'w'.repeat(501),
+      }),
+      params(site.id),
+    );
+    expect(badWelcome.status).toBe(400);
+    expect((await badWelcome.json()).error).toBe('invalid_welcome_message');
+
+    const wrongType = await updateSiteRoute(
+      jsonRequest(`/api/admin/sites/${site.id}`, 'PUT', { welcomeMessage: 42 }),
+      params(site.id),
+    );
+    expect(wrongType.status).toBe(400);
 
     const badOrigins = await updateSiteRoute(
       jsonRequest(`/api/admin/sites/${site.id}`, 'PUT', { allowedOrigins: ['*'] }),

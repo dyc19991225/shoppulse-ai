@@ -26,6 +26,8 @@ export interface SitesLabels {
   originsHint: string;
   rateLimit: string;
   rateLimitHint: string;
+  welcomeMessage: string;
+  welcomeMessageHint: string;
   embed: string;
   embedHint: string;
   copy: string;
@@ -55,9 +57,16 @@ interface Draft {
   siteKey: string;
   origins: string;
   rateLimit: string;
+  welcomeMessage: string;
 }
 
-const EMPTY_DRAFT: Draft = { name: '', siteKey: '', origins: '', rateLimit: '30' };
+const EMPTY_DRAFT: Draft = {
+  name: '',
+  siteKey: '',
+  origins: '',
+  rateLimit: '30',
+  welcomeMessage: '',
+};
 
 async function copyText(text: string): Promise<boolean> {
   try {
@@ -104,6 +113,7 @@ function validateDraft(draft: Draft): string | null {
   }
   const rate = Number(draft.rateLimit);
   if (!Number.isInteger(rate) || rate < 1 || rate > 600) return 'rate';
+  if (draft.welcomeMessage.trim().length > 500) return 'welcome';
   return null;
 }
 
@@ -153,6 +163,7 @@ export function SitesManager({
       siteKey: site.siteKey,
       origins: site.allowedOrigins.join('\n'),
       rateLimit: String(site.rateLimitPerMin),
+      welcomeMessage: site.welcomeMessage,
     });
     setFormError(null);
   }
@@ -182,6 +193,7 @@ export function SitesManager({
         name: draft.name,
         allowedOrigins: draft.origins,
         rateLimitPerMin: Number(draft.rateLimit),
+        welcomeMessage: draft.welcomeMessage,
         ...(draft.siteKey ? { siteKey: draft.siteKey } : {}),
       };
       const response = await fetch(
@@ -314,6 +326,14 @@ export function SitesManager({
                   </dt>
                   <dd className="mt-0.5 tabular-nums text-slate-700">{site.rateLimitPerMin}/min</dd>
                 </div>
+                <div className="sm:col-span-2">
+                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                    {labels.welcomeMessage}
+                  </dt>
+                  <dd className="mt-0.5 whitespace-pre-wrap text-slate-700">
+                    {site.welcomeMessage || '—'}
+                  </dd>
+                </div>
               </dl>
 
               <div className="mt-4">
@@ -426,6 +446,20 @@ export function SitesManager({
               />
               <span className="mt-1 block text-xs font-normal text-slate-500">
                 {labels.rateLimitHint}
+              </span>
+            </label>
+
+            <label className="block text-sm font-medium text-slate-700">
+              {labels.welcomeMessage}
+              <textarea
+                value={draft.welcomeMessage}
+                onChange={(event) => setDraft({ ...draft, welcomeMessage: event.target.value })}
+                rows={3}
+                maxLength={500}
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm shadow-sm transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
+              />
+              <span className="mt-1 block text-xs font-normal text-slate-500">
+                {labels.welcomeMessageHint}
               </span>
             </label>
 

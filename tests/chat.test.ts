@@ -207,6 +207,63 @@ describe('runChat', () => {
     expect(provider.lastMessages[1].content).toContain('物流');
   });
 
+  it('feeds agent messages back to the model as assistant turns (F3)', async () => {
+    const { db, site } = setup();
+    createConversation(db, OWNER, { id: 'with-agent', siteId: site.id, visitorId: 'v1' });
+    addMessage(db, OWNER, { id: 'u1', conversationId: 'with-agent', role: 'user', content: '能便宜吗？' });
+    addMessage(db, OWNER, {
+      id: 'a1',
+      conversationId: 'with-agent',
+      role: 'assistant',
+      content: '暂时没有优惠。',
+    });
+    addMessage(db, OWNER, {
+      id: 'h1',
+      conversationId: 'with-agent',
+      role: 'agent',
+      content: '我是店长，可以给您包邮。',
+    });
+
+    const provider = new RecordingProvider('好的');
+    await collect(db, site, '那太好了', provider, {
+      conversationId: 'with-agent',
+      visitorId: 'v1',
+    });
+
+    const history = provider.lastMessages.slice(1);
+    expect(history.map((message) => message.role)).toEqual([
+      'user',
+      'assistant',
+      'assistant',
+      'user',
+    ]);
+    expect(history[2]).toEqual({ role: 'assistant', content: '我是店长，可以给您包邮。' });
+  });
+
+  it('reports needsHuman in the meta event', async () => {
+    const { db, site } = setup();
+    createConversation(db, OWNER, {
+      id: 'needs-human',
+      siteId: site.id,
+      visitorId: 'v1',
+    });
+    db.prepare('UPDATE conversations SET needs_human = 1 WHERE id = ?').run('needs-human');
+
+    const sharedIds = ids();
+    const resumed = await collect(db, site, '在吗', undefined, {
+      conversationId: 'needs-human',
+      visitorId: 'v1',
+      newId: sharedIds,
+    });
+    expect((resumed[0] as Extract<ChatEvent, { event: 'meta' }>).data.needsHuman).toBe(true);
+
+    const handoff = await collect(db, site, '我要转人工', undefined, { newId: sharedIds });
+    expect((handoff[0] as Extract<ChatEvent, { event: 'meta' }>).data.needsHuman).toBe(true);
+
+    const normal = await collect(db, site, '你好', undefined, { newId: sharedIds });
+    expect((normal[0] as Extract<ChatEvent, { event: 'meta' }>).data.needsHuman).toBe(false);
+  });
+
   it('creates a new conversation when the id belongs to another site', async () => {
     const { db, site } = setup();
     const otherSite = db
