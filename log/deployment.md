@@ -43,3 +43,4 @@
 - 2026-11-02 12:27 (UTC+8) M2 完成（Claude Code）：所有仓储函数必填 ownerId；会话按 sites.owner_id；跨用户 ID → 404；挂件按 site.ownerId 检索与价格守卫；侧栏显示用户名/角色。新增 tests/isolation.test.ts（10）。测试 405/405，tsc 与 build 通过。
 - 2026-11-02 12:44 (UTC+8) M3 完成（Claude Code）：deploy/user.mjs（list/add/reset-password/disable/enable，密码仅追加写入 --out 文件 600，add 同时建默认站点，拒绝 user_version<2）；DEPLOY.md 增加「升级到 v0.2（多用户）」与回滚（未执行）。测试 417/417。
 - 2026-11-02 12:47 (UTC+8) 本地两用户端到端（standalone 构建 + 临时库 + CLI 建 alice/bob，mock LLM）：16/16 通过——同 SKU 可跨用户；B 列表看不到 A 的知识库/商品/会话；B 猜 A 的知识库/商品/站点 ID（含 admin 的站点 1）GET/PUT/DELETE 均 404；挂件 B 站点只返回 Bob 商品与价格；disable 后旧会话与重新登录均 401。（重复跑会因 A 自身 SKU 冲突出现预期内的 409，非缺陷。）
+- 2026-11-02 12:50 (UTC+8) Codex（gpt-6-luna, low）审查多用户改动一次：4 条——High 迁移 v2 重建 products 后 copy_history 外键目标需验证；Medium ensureDefaultSite 全局取首个站点；Medium 禁用/无凭据 bootstrap 用户跳过 dummy scrypt（时序可区分）；Low 会话详情消息计数未按 owner。交给 Claude Code 修复。
