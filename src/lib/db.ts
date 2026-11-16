@@ -867,7 +867,7 @@ export function touchConversation(
   db: DB,
   ownerId: number,
   id: string,
-  updates: { topIntent?: string; needsHuman?: boolean } = {},
+  updates: { topIntent?: string; needsHuman?: boolean; handled?: boolean } = {},
 ): void {
   const sets = ['last_at = ?'];
   const params: unknown[] = [nowIso()];
@@ -878,6 +878,10 @@ export function touchConversation(
   if (updates.needsHuman !== undefined) {
     sets.push('needs_human = ?');
     params.push(updates.needsHuman ? 1 : 0);
+  }
+  if (updates.handled !== undefined) {
+    sets.push('handled = ?');
+    params.push(updates.handled ? 1 : 0);
   }
   params.push(id, ownerId);
   db.prepare(
@@ -1072,6 +1076,8 @@ export function listMessages(db: DB, ownerId: number, conversationId: string): M
  * that conversation belongs to `siteId` and `visitorId` matches the visitor the
  * conversation was created for. Returns null for every mismatch so the route
  * can answer one uniform 404 and never reveal whether an id exists elsewhere.
+ * `afterId` takes precedence over the legacy timestamp and must name an agent
+ * message in this same authorized conversation.
  */
 export function listAgentMessagesForVisitor(
   db: DB,
@@ -1079,6 +1085,7 @@ export function listAgentMessagesForVisitor(
   conversationId: string,
   visitorId: string,
   after?: string,
+  afterId?: string,
 ): Message[] | null {
   if (!conversationId || !visitorId) return null;
   const conversation = db
@@ -1094,6 +1101,20 @@ export function listAgentMessagesForVisitor(
     return null;
   }
 
+  // The new widget uses an opaque message id as an insertion cursor. Rowids
+  // break timestamp ties and keep working if the server clock moves backwards.
+  if (afterId) {
+    const cursor = db.prepare(
+      "SELECT rowid AS position FROM messages WHERE id = ? AND conversation_id = ? AND role = 'agent'",
+    ).get(afterId, conversationId) as { position: number } | undefined;
+    if (!cursor) return null;
+    return (db.prepare(
+      `SELECT * FROM messages
+       WHERE conversation_id = ? AND role = 'agent' AND rowid > ?
+       ORDER BY rowid ASC`,
+    ).all(conversationId, cursor.position) as Row[]).map(mapMessage);
+  }
+
   const rows = after
     ? db
         .prepare(
@@ -1106,7 +1127,7 @@ export function listAgentMessagesForVisitor(
         .prepare(
           `SELECT * FROM messages
            WHERE conversation_id = ? AND role = 'agent'
-           ORDER BY created_at ASC, rowid ASC`,
+           ORDER BY rowid ASC`,
         )
         .all(conversationId);
   return (rows as Row[]).map(mapMessage);

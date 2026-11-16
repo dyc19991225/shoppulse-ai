@@ -27,8 +27,8 @@ function corsJson(
  * F3 widget polling. Authorization mirrors chat: a known site key, an allowed
  * origin and the visitor id the conversation was created with. The visitor id
  * is the credential, so every mismatch answers the same 404 `not_found`.
- * Only `agent` messages are exposed, optionally those created strictly after
- * `after` (ISO timestamp). Rate-limited like chat.
+ * Only `agent` messages are exposed. `after_id` resumes in insertion order;
+ * the legacy `after` ISO timestamp remains supported. Rate-limited like chat.
  */
 export function GET(request: NextRequest): NextResponse {
   const params = request.nextUrl.searchParams;
@@ -42,6 +42,10 @@ export function GET(request: NextRequest): NextResponse {
   }
 
   const after = params.get('after')?.trim() ?? '';
+  const afterId = params.get('after_id')?.trim() ?? '';
+  if (afterId.length > MAX_PARAM_LENGTH) {
+    return NextResponse.json({ error: 'invalid_after_id' }, { status: 400 });
+  }
   if (after) {
     const date = new Date(after);
     if (
@@ -74,6 +78,7 @@ export function GET(request: NextRequest): NextResponse {
     conversationId,
     visitorId,
     after || undefined,
+    afterId || undefined,
   );
   if (items === null) return corsJson(404, 'not_found', cors);
 

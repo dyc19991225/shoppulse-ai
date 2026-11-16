@@ -33,10 +33,11 @@ is a real per-user DB aggregate, otherwise an empty state.
 - **F3 Inbox: agent reply + tags + note.**
   - `POST /api/admin/conversations/[id]/messages {content}` stores a message with role `agent` (owner-scoped; 404 otherwise),
     updates `last_at`. Optional `markHandled`.
-  - Widget receives agent replies: `GET /api/widget/messages?site_key&conversation_id&visitor_id&after=<ISO>` returns only
+  - Widget receives agent replies: `GET /api/widget/messages?site_key&conversation_id&visitor_id&after_id=<message-id>` returns only
     `agent` messages of that conversation when site key, origin check (same rules as chat) and visitor_id all match; the
     widget polls every 5 s only while the panel is open and the conversation has needs_human (or after the first agent
-    message), stops on close. Rate-limited like chat.
+    message), stops on close. Rate-limited like chat. The cursor is the last delivered agent message id and resumes in
+    insertion order, including replies sharing a timestamp. Legacy `after=<ISO>` remains supported; `after_id` takes precedence.
   - Conversations get `tags TEXT NOT NULL DEFAULT '[]'` (≤10 tags, each 1–20 chars, trimmed, dedup) and `note TEXT NOT NULL DEFAULT ''`
     (≤2000); `PATCH /api/admin/conversations/[id] {tags?, note?, handled?}`; list supports `?tag=`; UI chips + note box.
 - **F4 Add to knowledge base from a conversation**: in conversation detail, a visitor message has "加入知识库" which opens the

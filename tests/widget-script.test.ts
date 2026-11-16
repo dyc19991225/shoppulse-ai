@@ -26,7 +26,7 @@ interface Harness {
   window: any;
   fetchCalls: { url: string; init: RequestInit }[];
   respond: (body: ReadableStream<Uint8Array> | string, init?: ResponseInit) => void;
-  route: (match: (url: string) => boolean, handler: (url: string) => Response) => void;
+  route: (match: (url: string) => boolean, handler: (url: string) => Response | Promise<Response>) => void;
   send: (text: string) => Promise<void>;
   flush: () => Promise<void>;
   shadow: ShadowRoot;
@@ -72,7 +72,7 @@ function setup(
 
   // jsdom lacks fetch; wire the Node implementations into the window.
   const fetchCalls: { url: string; init: RequestInit }[] = [];
-  const routes: { match: (url: string) => boolean; handler: (url: string) => Response }[] = [];
+  const routes: { match: (url: string) => boolean; handler: (url: string) => Response | Promise<Response> }[] = [];
   let respond: Harness['respond'] = () => {};
   window.fetch = (url: string, init: RequestInit) => {
     fetchCalls.push({ url, init });
@@ -469,7 +469,7 @@ describe('widget.js', () => {
     expect(pollInterval).toBeDefined();
     expect(harness.window.ShopPulseWidget.isPolling()).toBe(true);
 
-    // A reply shows up on the next tick, with an `after` cursor.
+    // A reply shows up on the next tick; later polls use its opaque id.
     replies = [
       {
         id: 'agent-1',
@@ -486,13 +486,12 @@ describe('widget.js', () => {
     expect(agentBubble).not.toBeNull();
     expect(agentBubble.textContent).toContain('人工客服：已收到您的留言。');
 
-    // The same reply is not duplicated, and subsequent polls use its timestamp.
+    // The same reply is not duplicated, and subsequent polls use its id.
     pollInterval!.fn();
     await harness.flush();
     expect(harness.shadow.querySelectorAll('.msg.agent')).toHaveLength(1);
-    expect(new URL(messageCalls()[2].url).searchParams.get('after')).toBe(
-      '2024-01-01T00:00:05.000Z',
-    );
+    expect(new URL(messageCalls()[2].url).searchParams.get('after_id')).toBe('agent-1');
+    expect(new URL(messageCalls()[2].url).searchParams.get('after')).toBeNull();
 
     harness.window.ShopPulseWidget.close();
     expect(harness.window.ShopPulseWidget.isPolling()).toBe(false);
@@ -500,6 +499,65 @@ describe('widget.js', () => {
     pollInterval!.fn();
     await harness.flush();
     expect(messageCalls()).toHaveLength(callsAfterClose);
+  });
+
+  it('resets the message cursor when the server creates a replacement conversation', async () => {
+    const harness = setup({ storage: {
+      'shoppulse_conversation_id:test-site-key': 'old-conv',
+      'shoppulse_agent_watch:test-site-key': 'old-conv',
+    } });
+    harness.route(url => url.includes('/api/widget/config'), () => new Response('{}'));
+    harness.route(url => url.includes('/api/widget/messages'), url => {
+      const old = new URL(url).searchParams.get('conversation_id') === 'old-conv';
+      return new Response(JSON.stringify({ items: [{
+        id: old ? 'old-agent' : 'new-agent', content: old ? 'old reply' : 'new reply',
+        createdAt: '2024-01-01T00:00:00.000Z',
+      }] }));
+    });
+    await harness.open();
+    const sending = harness.send('hello');
+    harness.respond(sseStream([
+      { event: 'meta', data: { conversationId: 'new-conv', needsHuman: true } },
+      { event: 'done', data: { conversationId: 'new-conv' } },
+    ]));
+    await sending;
+    const next = harness.fetchCalls.find(call => call.url.includes('/api/widget/messages') &&
+      new URL(call.url).searchParams.get('conversation_id') === 'new-conv');
+    expect(next).toBeDefined();
+    expect(new URL(next!.url).searchParams.get('after_id')).toBeNull();
+    const bubbles = harness.shadow.querySelectorAll('.msg.agent');
+    expect(bubbles).toHaveLength(2);
+    expect(bubbles[0].textContent).toContain('old reply');
+    expect(bubbles[1].textContent).toContain('new reply');
+  });
+
+  it('ignores a late poll response from the previous conversation', async () => {
+    let release!: (response: Response) => void;
+    const pending = new Promise<Response>(resolve => { release = resolve; });
+    const harness = setup({ storage: {
+      'shoppulse_conversation_id:test-site-key': 'old-conv',
+      'shoppulse_agent_watch:test-site-key': 'old-conv',
+    } });
+    harness.route(url => url.includes('/api/widget/config'), () => new Response('{}'));
+    harness.route(url => url.includes('/api/widget/messages'), url =>
+      new URL(url).searchParams.get('conversation_id') === 'old-conv'
+        ? pending : new Response('{"items":[]}'));
+    await harness.open();
+    const sending = harness.send('hello');
+    harness.respond(sseStream([
+      { event: 'meta', data: { conversationId: 'new-conv', needsHuman: true } },
+      { event: 'done', data: { conversationId: 'new-conv' } },
+    ]));
+    await sending;
+    release(new Response(JSON.stringify({ items: [{ id: 'stale-agent', content: 'stale reply' }] })));
+    await harness.flush();
+    expect(harness.shadow.querySelectorAll('.msg.agent')).toHaveLength(0);
+    const timer = harness.intervals.find(interval => interval.delay === 5000 && !interval.cleared);
+    timer!.fn();
+    await harness.flush();
+    const lastPoll = harness.fetchCalls.filter(call => call.url.includes('/api/widget/messages')).at(-1)!;
+    expect(new URL(lastPoll.url).searchParams.get('conversation_id')).toBe('new-conv');
+    expect(new URL(lastPoll.url).searchParams.get('after_id')).toBeNull();
   });
 
   it('does not poll without a conversation watch', async () => {

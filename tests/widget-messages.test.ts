@@ -117,6 +117,50 @@ const QUERY = {
 };
 
 describe('GET /api/widget/messages', () => {
+  it('uses an insertion cursor so replies at the same timestamp are delivered exactly once', async () => {
+    seedConversation();
+    const poll = async (afterId?: string) => {
+      const response = messagesGet(request({ ...QUERY, ...(afterId ? { after_id: afterId } : {}) }));
+      expect(response.status).toBe(200);
+      return (await response.json()).items as { id: string }[];
+    };
+    const first = await poll();
+    expect(first.map(item => item.id)).toEqual(['agent-1', 'agent-2']);
+    addMessage(db(), OWNER_A, {
+      id: 'agent-same-time', conversationId: 'conv-a', role: 'agent', content: 'same timestamp',
+      createdAt: '2024-01-01T00:00:03.000Z',
+    });
+    expect((await poll('agent-2')).map(item => item.id)).toEqual(['agent-same-time']);
+    expect(await poll('agent-same-time')).toEqual([]);
+  });
+
+  it('delivers later inserts even when the wall clock moves backwards', async () => {
+    seedConversation();
+    addMessage(db(), OWNER_A, {
+      id: 'agent-clock-back', conversationId: 'conv-a', role: 'agent', content: 'later insert',
+      createdAt: '2023-12-31T23:59:59.000Z',
+    });
+    const response = messagesGet(request({ ...QUERY, after_id: 'agent-2' }));
+    expect(response.status).toBe(200);
+    expect((await response.json()).items.map((item: { id: string }) => item.id)).toEqual(['agent-clock-back']);
+  });
+
+  it('rejects missing or unrelated agent cursors with the same not_found response', async () => {
+    const site = seedConversation();
+    createConversation(db(), OWNER_A, { id: 'other-conv', siteId: site.id, visitorId: 'other-visitor' });
+    addMessage(db(), OWNER_A, { id: 'other-agent', conversationId: 'other-conv', role: 'agent', content: 'private' });
+    for (const afterId of ['missing', 'other-agent', 'user-1']) {
+      const response = messagesGet(request({ ...QUERY, after_id: afterId }));
+      expect(response.status).toBe(404);
+      expect((await response.json()).error).toBe('not_found');
+    }
+  });
+
+  it('bounds the insertion cursor parameter', () => {
+    seedConversation();
+    expect(messagesGet(request({ ...QUERY, after_id: 'x'.repeat(201) })).status).toBe(400);
+  });
+
   it('returns only agent messages of the matching conversation', async () => {
     const site = seedConversation();
     const response = messagesGet(request(QUERY, { origin: 'https://a.example.com' }));

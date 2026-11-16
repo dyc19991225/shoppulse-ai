@@ -7,6 +7,8 @@ import {
   getConversation,
   getSiteByKey,
   listMessages,
+  listConversations,
+  setConversationHandled,
   DEFAULT_SITE_KEY,
   type DB,
   type Site,
@@ -108,6 +110,29 @@ describe('validateMessage', () => {
     expect(() => validateMessage('   ')).toThrow(ChatInputError);
     expect(() => validateMessage(42)).toThrow(ChatInputError);
     expect(() => validateMessage('a'.repeat(MAX_MESSAGE_LENGTH + 1))).toThrow(/exceeds/);
+  });
+});
+
+describe('handled conversation follow-ups', () => {
+  it('reopens a handled conversation when the visitor requests human help again', async () => {
+    const { db, site } = setup();
+    createConversation(db, OWNER, { id: 'handled-chat', siteId: site.id, visitorId: 'visitor-1' });
+    setConversationHandled(db, OWNER, 'handled-chat', true);
+    const events = await collect(db, site, '我要转人工', undefined, {
+      conversationId: 'handled-chat', visitorId: 'visitor-1',
+    });
+    expect(events.some(event => event.event === 'handoff')).toBe(true);
+    expect(getConversation(db, OWNER, 'handled-chat')).toMatchObject({ needsHuman: true, handled: false });
+    expect(listConversations(db, OWNER, { needsHuman: true, handled: false }).items.map(item => item.id))
+      .toContain('handled-chat');
+  });
+
+  it('keeps a handled conversation closed for an ordinary follow-up', async () => {
+    const { db, site } = setup();
+    createConversation(db, OWNER, { id: 'handled-chat', siteId: site.id, visitorId: 'visitor-1' });
+    setConversationHandled(db, OWNER, 'handled-chat', true);
+    await collect(db, site, '谢谢', undefined, { conversationId: 'handled-chat', visitorId: 'visitor-1' });
+    expect(getConversation(db, OWNER, 'handled-chat')!.handled).toBe(true);
   });
 });
 

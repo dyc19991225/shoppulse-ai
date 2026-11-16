@@ -108,7 +108,7 @@
     /** F3: conversation watched for merchant replies (handoff happened). */
     needsHuman: false,
     watchConversationId: readStorage(WATCH_KEY) || '',
-    lastAgentAt: '',
+    lastAgentId: '',
     polling: false,
     pollingRequest: false,
     renderedAgentIds: {},
@@ -609,14 +609,15 @@
     state.polling = false;
   }
 
-  /** GET /api/widget/messages; only agent messages after the newest one seen. */
+  /** GET /api/widget/messages; resume after the last delivered message id. */
   function pollAgentMessages() {
     if (!state.conversationId || !state.visitorId || state.pollingRequest) return;
     var params = new URLSearchParams();
+    var conversationId = state.conversationId;
     params.set('site_key', SITE_KEY);
-    params.set('conversation_id', state.conversationId);
+    params.set('conversation_id', conversationId);
     params.set('visitor_id', state.visitorId);
-    if (state.lastAgentAt) params.set('after', state.lastAgentAt);
+    if (state.lastAgentId) params.set('after_id', state.lastAgentId);
 
     state.pollingRequest = true;
     fetch(API_BASE + '/api/widget/messages?' + params.toString(), {
@@ -628,6 +629,7 @@
         return response.json();
       })
       .then(function (body) {
+        if (conversationId !== state.conversationId) return;
         if (!body || !body.items || !body.items.length) return;
         body.items.forEach(function (message) {
           if (
@@ -640,9 +642,7 @@
           }
           state.renderedAgentIds[message.id] = true;
           addMessage('agent', message.content);
-          if (typeof message.createdAt === 'string' && message.createdAt > state.lastAgentAt) {
-            state.lastAgentAt = message.createdAt;
-          }
+          state.lastAgentId = message.id;
           // Once a merchant replies, keep watching even if the handoff flag is
           // cleared by handling the conversation.
           markWatchAgent();
@@ -772,6 +772,11 @@
     function onEvent(name, data) {
       if (name === 'meta') {
         if (data && typeof data.conversationId === 'string') {
+          if (data.conversationId !== state.conversationId) {
+            stopPolling();
+            state.lastAgentId = '';
+            state.renderedAgentIds = {};
+          }
           state.conversationId = data.conversationId;
           writeStorage(CONV_KEY, data.conversationId);
         }

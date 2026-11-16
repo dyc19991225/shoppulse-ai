@@ -244,7 +244,7 @@ export async function* runChat(input: ChatInput): AsyncGenerator<ChatEvent, void
   });
   touchConversation(db, site.ownerId, conversationId, {
     topIntent: pickTopIntent(history, intentResult.intent),
-    ...(handoff.needed ? { needsHuman: true } : {}),
+    ...(handoff.needed ? { needsHuman: true, handled: false } : {}),
   });
 
   if (handoff.needed && handoff.reason) {
